@@ -21,13 +21,17 @@ export default function Subscribe() {
   const [emailVerified, setEmailVerified] = useState(false);
   const [otpCode, setOtpCode] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileError, setTurnstileError] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const turnstileRef = useRef(null);
 
   useEffect(() => { getPlans().then((items) => setPlan(items.find((item) => item.slug === planSlug))).catch(() => setError("Unable to load this plan.")); }, [planSlug]);
   useEffect(() => {
     const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
-    if (!siteKey || !turnstileRef.current) return undefined;
+    if (!siteKey || !turnstileRef.current) {
+      if (!siteKey && plan && !plan.is_free) setTurnstileError(true);
+      return undefined;
+    }
     const script = document.createElement("script");
     script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
     script.async = true;
@@ -38,7 +42,10 @@ export default function Subscribe() {
           action: "checkout",
           callback: (token) => setTurnstileToken(token),
           "expired-callback": () => setTurnstileToken(""),
-          "error-callback": () => setTurnstileToken(""),
+          "error-callback": () => {
+            setTurnstileToken("");
+            setTurnstileError(true);
+          },
         });
       }
     };
@@ -64,7 +71,9 @@ export default function Subscribe() {
         if (!emailVerified) {
           if (!otpSent) {
             if (!turnstileToken) {
-              setError("Complete the checkout verification before continuing.");
+              setError(turnstileError
+                ? "Checkout verification could not load. Disable content blockers, allow challenges.cloudflare.com, or try another network and refresh the page."
+                : "Complete the checkout verification before continuing.");
               return;
             }
             await startCheckoutEmail(form.email, turnstileToken);
@@ -104,7 +113,7 @@ export default function Subscribe() {
             <Field label="Organization name" name="organization_name" autoComplete="organization" value={form.organization_name} onChange={update} />
             <Field label="Password" name="password" type="password" autoComplete="new-password" value={form.password} onChange={update} minLength="8" />
             {plan && !plan.is_free && <div><label className="text-xs font-bold text-slate-300">USDT network</label><div className="grid sm:grid-cols-2 gap-3 mt-2">{networks.map(([value,label,note]) => <label key={value} className={`p-4 rounded-xl border cursor-pointer ${form.network === value ? "border-indigo-400 bg-indigo-500/10" : "border-slate-700 bg-slate-950/50"}`}><input className="sr-only" type="radio" name="network" value={value} checked={form.network === value} onChange={update} /><strong className="block text-sm">{label}</strong><span className="text-xs text-slate-500">{note}</span></label>)}</div></div>}
-            {plan && !plan.is_free && !emailVerified && <div className="space-y-3">{otpSent ? <Field label="Email verification code" name="otp_code" autoComplete="one-time-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" maxLength="6" /> : <div ref={turnstileRef} />}</div>}
+            {plan && !plan.is_free && !emailVerified && <div className="space-y-3">{otpSent ? <Field label="Email verification code" name="otp_code" autoComplete="one-time-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" maxLength="6" /> : <><div ref={turnstileRef} />{turnstileError && <p className="text-xs text-amber-300">Checkout verification is unavailable. Refresh after allowing Cloudflare challenges.</p>}</>}</div>}
             <button disabled={!plan || loading} className="w-full py-3.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 font-bold disabled:opacity-50 flex items-center justify-center gap-2">{loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : plan?.is_free ? "Create free account" : !emailVerified ? otpSent ? "Verify email" : "Email verification code" : "Create USDT invoice"}</button>
             <p className="flex justify-center items-center gap-2 text-[11px] text-slate-600"><LockKeyhole className="w-3 h-3" /> Passwords are securely hashed. We never request wallet keys.</p>
           </form>
