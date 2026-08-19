@@ -44,7 +44,7 @@ export default function Subscribe() {
     };
     document.body.appendChild(script);
     return () => script.remove();
-  }, []);
+  }, [plan]);
   const update = (event) => {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
     if (event.target.name === "email") {
