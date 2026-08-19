@@ -37,6 +37,8 @@ export default function Subscribe() {
           sitekey: siteKey,
           action: "checkout",
           callback: (token) => setTurnstileToken(token),
+          "expired-callback": () => setTurnstileToken(""),
+          "error-callback": () => setTurnstileToken(""),
         });
       }
     };
@@ -61,6 +63,10 @@ export default function Subscribe() {
       } else {
         if (!emailVerified) {
           if (!otpSent) {
+            if (!turnstileToken) {
+              setError("Complete the checkout verification before continuing.");
+              return;
+            }
             await startCheckoutEmail(form.email, turnstileToken);
             setOtpSent(true);
             return;

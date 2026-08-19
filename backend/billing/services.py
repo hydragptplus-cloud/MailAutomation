@@ -104,8 +104,12 @@ def verify_turnstile(token, request):
         raise ValidationError({"turnstile_token": "Checkout verification is temporarily unavailable."}) from exc
     if not payload.get("success"):
         raise ValidationError({"turnstile_token": "Checkout verification failed."})
-    expected_hostname = getattr(settings, "TURNSTILE_EXPECTED_HOSTNAME", "")
-    if expected_hostname and payload.get("hostname") != expected_hostname:
+    expected_hostnames = [
+        hostname.strip()
+        for hostname in getattr(settings, "TURNSTILE_EXPECTED_HOSTNAME", "").split(",")
+        if hostname.strip()
+    ]
+    if expected_hostnames and payload.get("hostname") not in expected_hostnames:
         raise ValidationError({"turnstile_token": "Checkout verification failed."})
     expected_action = getattr(settings, "TURNSTILE_CHECKOUT_ACTION", "")
     if expected_action and payload.get("action") != expected_action:
