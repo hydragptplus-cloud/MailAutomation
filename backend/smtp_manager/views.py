@@ -35,8 +35,8 @@ class SMTPAccountViewSet(TenantViewSetMixin, viewsets.ModelViewSet):
         try:
             result = test_smtp(self.get_object())
             return Response(result, status=status.HTTP_200_OK if result.get("ok") else status.HTTP_400_BAD_REQUEST)
-        except Exception as exc:
-            return Response({"ok": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({"ok": False, "message": "SMTP connection test failed."}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=["post"], url_path="send-test", throttle_classes=[ScopedRateThrottle], throttle_scope="smtp_test")
     def send_test_hyphen(self, request, pk=None):
@@ -65,5 +65,5 @@ class SMTPAccountViewSet(TenantViewSetMixin, viewsets.ModelViewSet):
                 account.sent_today += 1
                 account.save(update_fields=["sent_today", "sent_date"])
             return Response(result, status=200 if result.get("ok") else 400)
-        except Exception as exc:
-            return Response({"ok": False, "message": str(exc)}, status=400)
+        except Exception:
+            return Response({"ok": False, "message": "Test email could not be delivered."}, status=400)

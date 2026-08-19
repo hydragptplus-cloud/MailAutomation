@@ -126,7 +126,7 @@ def campaign_reports_list(params=None, organization=None):
         rate = round((sent_c / total_attempts * 100), 1) if total_attempts > 0 else 0.0
 
         results.append({
-            "id": c.id,
+            "id": c.id,  # type: ignore[attr-defined]  # type: ignore[attr-defined]
             "name": c.name,
             "campaign_name": c.name,
             "subject": c.subject,
@@ -171,7 +171,7 @@ def campaign_report_detail(campaign_id, organization=None):
 
     return {
         "campaign": {
-            "id": campaign.id,
+            "id": campaign.id,  # type: ignore[attr-defined]
             "name": campaign.name,
             "subject": campaign.subject,
             "status": campaign.status,
@@ -207,8 +207,8 @@ def delivery_logs_list(params=None, organization=None):
     results = []
     for log in qs[:200]:
         results.append({
-            "id": log.id,
-            "campaign_id": log.campaign_id,
+            "id": log.id,  # type: ignore[attr-defined]
+            "campaign_id": log.campaign_id,  # type: ignore[attr-defined]
             "campaign_name": log.campaign.name if log.campaign else "System",
             "recipient_email": log.recipient_email,
             "email": log.recipient_email,

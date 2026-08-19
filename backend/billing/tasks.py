@@ -1,3 +1,5 @@
+from typing import Any
+
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -30,7 +32,7 @@ def _send_message(subject, body, recipient, html=None):
 
 
 def _record_delivery(invoice_id, sent_field, error_field, *, error=""):
-    values = {error_field: error[:4000]}
+    values: dict[str, Any] = {error_field: error[:4000]}
     if not error:
         values[sent_field] = timezone.now()
     PaymentInvoice.objects.filter(pk=invoice_id).update(**values)
@@ -70,9 +72,9 @@ def send_invoice_email(invoice_id):
     invoice = PaymentInvoice.objects.select_related("plan").get(pk=invoice_id)
     try:
         _deliver_invoice_email(invoice)
-    except Exception as exc:
-        _record_delivery(invoice.pk, "invoice_email_sent_at", "invoice_email_error", error=str(exc))
-        raise
+    except Exception:
+        _record_delivery(invoice.pk, "invoice_email_sent_at", "invoice_email_error", error="Email delivery failed.")
+        raise RuntimeError("Email delivery failed.") from None
     _record_delivery(invoice.pk, "invoice_email_sent_at", "invoice_email_error")
     return "sent"
 
@@ -88,9 +90,9 @@ def send_recovery_email(email):
         return "no_active_invoice"
     try:
         _deliver_invoice_email(invoice, recovery=True)
-    except Exception as exc:
-        _record_delivery(invoice.pk, "recovery_email_sent_at", "recovery_email_error", error=str(exc))
-        raise
+    except Exception:
+        _record_delivery(invoice.pk, "recovery_email_sent_at", "recovery_email_error", error="Email delivery failed.")
+        raise RuntimeError("Email delivery failed.") from None
     _record_delivery(invoice.pk, "recovery_email_sent_at", "recovery_email_error")
     return "sent"
 
@@ -100,25 +102,29 @@ def send_payment_confirmation_email(invoice_id):
     invoice = PaymentInvoice.objects.select_related("plan", "organization").get(pk=invoice_id)
     if invoice.status != PaymentInvoice.Status.PAID:
         return "not_paid"
-    subscription = Subscription.objects.filter(organization_id=invoice.organization_id).first()
+    subscription = Subscription.objects.filter(organization=invoice.organization).first()
     explorer = {
         "bsc": "https://bscscan.com/tx/",
         "ethereum": "https://etherscan.io/tx/",
         "tron": "https://tronscan.org/#/transaction/",
         "ton": "https://tonviewer.com/transaction/",
     }.get(invoice.network, "")
+    network_labels: dict[str, str] = {
+        str(value): str(label) for value, label in PaymentInvoice.Network.choices
+    }
+    network_label = network_labels.get(str(invoice.network), str(invoice.network))
     body = (
         f"Hello {invoice.customer_name},\n\nPayment confirmed. Your {invoice.plan.name} plan is active.\n"
-        f"Amount: {invoice.amount_usdt} USDT\nNetwork: {invoice.get_network_display()}\n"
+        f"Amount: {invoice.amount_usdt} USDT\nNetwork: {network_label}\n"
         f"Transaction: {explorer}{invoice.transaction_hash}\n"
         f"Active until: {subscription.current_period_end.isoformat() if subscription else 'See your dashboard'}\n\n"
         f"Sign in: {settings.FRONTEND_URL.rstrip('/')}/login"
     )
     try:
         _send_message("Payment confirmed - Mail Flow", body, invoice.customer_email)
-    except Exception as exc:
-        _record_delivery(invoice.pk, "confirmation_email_sent_at", "confirmation_email_error", error=str(exc))
-        raise
+    except Exception:
+        _record_delivery(invoice.pk, "confirmation_email_sent_at", "confirmation_email_error", error="Email delivery failed.")
+        raise RuntimeError("Email delivery failed.") from None
     _record_delivery(invoice.pk, "confirmation_email_sent_at", "confirmation_email_error")
     return "sent"
 
@@ -133,9 +139,9 @@ def send_manual_review_email(invoice_id):
     )
     try:
         _send_message("Payment under manual review - Mail Flow", body, invoice.customer_email)
-    except Exception as exc:
-        _record_delivery(invoice.pk, "manual_review_email_sent_at", "manual_review_email_error", error=str(exc))
-        raise
+    except Exception:
+        _record_delivery(invoice.pk, "manual_review_email_sent_at", "manual_review_email_error", error="Email delivery failed.")
+        raise RuntimeError("Email delivery failed.") from None
     _record_delivery(invoice.pk, "manual_review_email_sent_at", "manual_review_email_error")
     return "sent"
 

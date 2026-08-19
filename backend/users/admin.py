@@ -4,7 +4,7 @@ from .models import User, UserLoginSession
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    fieldsets = tuple(UserAdmin.fieldsets or ()) + (("Mail Flow", {"fields": ("name", "role", "organization")}),)
+    fieldsets = list(UserAdmin.fieldsets or []) + [("Mail Flow", {"fields": ("name", "role", "organization")})]
     list_display = ("username", "email", "name", "role", "organization", "is_active")
 
 

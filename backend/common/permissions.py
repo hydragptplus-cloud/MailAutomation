@@ -4,7 +4,7 @@ from rest_framework.permissions import BasePermission, SAFE_METHODS
 class RolePermission(BasePermission):
     """Viewsets declare write_roles and optional action_roles; reads remain tenant-scoped."""
 
-    def has_permission(self, request, view):
+    def has_permission(self, request, view):  # pyright: ignore[reportIncompatibleMethodOverride]
         user = request.user
         if not user or not user.is_authenticated:
             return False
@@ -16,10 +16,10 @@ class RolePermission(BasePermission):
 
 
 class OwnerOnly(BasePermission):
-    def has_permission(self, request, view):
+    def has_permission(self, request, view):  # pyright: ignore[reportIncompatibleMethodOverride]
         return bool(request.user and request.user.is_authenticated and request.user.role == "owner")
 
 
 class OwnerOrAdmin(BasePermission):
-    def has_permission(self, request, view):
+    def has_permission(self, request, view):  # pyright: ignore[reportIncompatibleMethodOverride]
         return bool(request.user and request.user.is_authenticated and request.user.role in {"owner", "admin"})

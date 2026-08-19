@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django import forms
 from django.core.exceptions import ObjectDoesNotExist
+from typing import cast
 from .models import BillingConfiguration, Organization, OrganizationUsage, SystemSetting
 
 
@@ -21,8 +22,9 @@ class OrganizationAdminForm(forms.ModelForm):
                 current_plan_id = self.instance.subscription.plan_id
             except ObjectDoesNotExist:
                 pass
-        self.fields["plan"].queryset = Plan.objects.filter(is_active=True) | Plan.objects.filter(pk=current_plan_id)
-        self.fields["plan"].initial = current_plan_id
+        plan_field = cast(forms.ModelChoiceField, self.fields["plan"])
+        plan_field.queryset = Plan.objects.filter(is_active=True) | Plan.objects.filter(pk=current_plan_id)
+        plan_field.initial = current_plan_id
 
 
 @admin.register(Organization)

@@ -2,6 +2,7 @@ import re
 import smtplib
 import ssl
 import time
+from typing import Any, cast
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 from django.conf import settings  # type: ignore
@@ -30,7 +31,7 @@ def _connection(account):
 
 def send_log_email(log_id):
     with transaction.atomic():
-        log = CampaignLog.objects.select_for_update(of=("self",)).select_related("campaign__template", "campaign__smtp", "recipient", "organization").get(pk=log_id)
+        log = cast(Any, CampaignLog.objects.select_for_update(of=("self",)).select_related("campaign__template", "campaign__smtp", "recipient", "organization").get(pk=log_id))
         if log.status == CampaignLog.Status.SENT:
             return {"log_id": log_id, "status": CampaignLog.Status.SENT, "detail": "already sent"}
         
@@ -47,7 +48,8 @@ def send_log_email(log_id):
         try:
             validate_organization_active(organization)
         except ValidationError as exc:
-            raise RuntimeError(str(exc.detail.get("detail", exc.detail))) from exc
+            detail = cast(Any, exc.detail)
+            raise RuntimeError(str(detail.get("detail", detail))) from exc
         usage = usage_snapshot(organization)
         reservations = CampaignLog.objects.filter(
             organization=organization, status=CampaignLog.Status.PROCESSING
@@ -71,7 +73,7 @@ def send_log_email(log_id):
         log.attempts += 1
         log.save(update_fields=["status", "attempts", "updated_at"])
 
-    campaign = log.campaign
+    campaign = cast(Any, log.campaign)
     if not campaign:
         raise RuntimeError("Campaign is missing.")
 

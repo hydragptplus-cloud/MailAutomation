@@ -1,5 +1,6 @@
 import uuid
-from django.contrib.auth import get_user_model
+from typing import Any, cast
+
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from django.utils import timezone
@@ -9,9 +10,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import InvalidToken
 from common.models import SystemSetting
 from common.models import Organization
-from .models import UserLoginSession
-
-User = get_user_model()
+from .models import User, UserLoginSession
 
 
 def _seat_count(organization, role, exclude_user=None):
@@ -36,20 +35,21 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             user = User.objects.filter(email__iexact=username_or_email).first()
             if user:
                 attrs["username"] = user.username
-        data = super().validate(attrs)
+        data: dict[str, Any] = dict(super().validate(attrs))
         request = self.context.get("request")
         self.user = User.objects.select_for_update().get(pk=self.user.pk)
-        if self.user.role == User.Role.OWNER:
-            UserLoginSession.objects.filter(user=self.user, revoked_at__isnull=True).update(revoked_at=timezone.now())
+        user = cast(User, self.user)
+        if user.role == User.Role.OWNER:
+            UserLoginSession.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
         session_id = uuid.uuid4()
-        refresh = RefreshToken(data["refresh"])
+        refresh = RefreshToken(cast(Any, data["refresh"]))
         refresh["session_id"] = str(session_id)
-        refresh["role"] = self.user.role
-        refresh["organization_id"] = self.user.organization_id
-        refresh["username"] = self.user.username
-        refresh["email"] = self.user.email
+        refresh["role"] = user.role
+        refresh["organization_id"] = user.organization.id if user.organization else None
+        refresh["username"] = user.username
+        refresh["email"] = user.email
         UserLoginSession.objects.create(
-            user=self.user,
+            user=user,
             session_id=session_id,
             refresh_token_jti=str(refresh["jti"]),
             ip_address=_request_ip(request),
@@ -57,13 +57,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         )
         data["refresh"] = str(refresh)
         data["access"] = str(refresh.access_token)
-        data["user"] = UserSerializer(self.user).data
+        data["user"] = UserSerializer(user).data
         return data
 
 
 class SessionTokenRefreshSerializer(TokenRefreshSerializer):
     def validate(self, attrs):
-        refresh = RefreshToken(attrs["refresh"])
+        refresh = RefreshToken(cast(Any, attrs["refresh"]))
         if not refresh.get("session_id") or not UserLoginSession.objects.filter(
             session_id=refresh.get("session_id"), user_id=refresh.get("user_id"), revoked_at__isnull=True
         ).exists():
@@ -82,7 +82,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
-        actor = request.user if request else None
+        actor = cast(User, request.user) if request and getattr(request.user, "is_authenticated", False) else None
         role = attrs.get("role", getattr(self.instance, "role", User.Role.OPERATOR))
         organization = attrs.get("organization", getattr(self.instance, "organization", None))
         if actor and actor.role != User.Role.OWNER:

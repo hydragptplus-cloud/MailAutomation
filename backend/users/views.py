@@ -1,4 +1,5 @@
-from django.contrib.auth import get_user_model
+from typing import cast
+
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -10,10 +11,19 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from common.models import SystemSetting
 from common.permissions import OwnerOrAdmin
 from common.tenancy import is_owner, scope_queryset
-from .models import UserLoginSession
-from .serializers import CustomTokenObtainPairSerializer, ProfileSerializer, SessionTokenRefreshSerializer, SystemSettingSerializer, UserLoginSessionSerializer, UserSerializer
+from .models import User, UserLoginSession
+from .serializers import (
+    CustomTokenObtainPairSerializer,
+    ProfileSerializer,
+    SessionTokenRefreshSerializer,
+    SystemSettingSerializer,
+    UserLoginSessionSerializer,
+    UserSerializer,
+)
 
-User = get_user_model()
+
+def _request_user(request) -> User:
+    return cast(User, request.user)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -35,11 +45,12 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [OwnerOrAdmin]
     search_fields = ("username", "email", "name")
 
-    def get_queryset(self):
-        return scope_queryset(User.objects.select_related("organization").order_by("-date_joined"), self.request.user)
+    def get_queryset(self):  # pyright: ignore[reportIncompatibleMethodOverride]
+        queryset = User.objects.select_related("organization").order_by("-date_joined")
+        return scope_queryset(queryset, _request_user(self.request))
 
     def perform_destroy(self, instance):
-        if instance == self.request.user:
+        if instance == _request_user(self.request):
             from rest_framework.exceptions import ValidationError
             raise ValidationError({"detail": "You cannot delete your own account."})
         instance.delete()
@@ -49,7 +60,7 @@ class SettingsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def _setting(self, request):
-        organization = request.user.organization
+        organization = _request_user(request).organization
         return SystemSetting.objects.get_or_create(organization=organization)[0] if organization else None
 
     def get(self, request):
@@ -59,7 +70,7 @@ class SettingsView(APIView):
         return Response(SystemSettingSerializer(setting_obj).data)
 
     def patch(self, request):
-        if request.user.role not in {"owner", "admin"}:
+        if _request_user(request).role not in {"owner", "admin"}:
             return Response({"detail": "You do not have permission to change settings."}, status=403)
         serializer = SystemSettingSerializer(self._setting(request), data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -71,10 +82,10 @@ class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response(ProfileSerializer(request.user).data)
+        return Response(ProfileSerializer(_request_user(request)).data)
 
     def patch(self, request):
-        serializer = ProfileSerializer(request.user, data=request.data, partial=True)
+        serializer = ProfileSerializer(_request_user(request), data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
@@ -86,7 +97,7 @@ class ChangePasswordView(APIView):
     throttle_scope = "password_change"
 
     def post(self, request):
-        user = request.user
+        user = _request_user(request)
         if not user.check_password(request.data.get("current_password")):
             return Response({"detail": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
         from django.contrib.auth.password_validation import validate_password
@@ -106,8 +117,9 @@ class LogoutView(APIView):
 
     def post(self, request):
         session_id = request.auth.get("session_id") if request.auth else None
+        user = _request_user(request)
         UserLoginSession.objects.filter(
-            user=request.user, session_id=session_id, revoked_at__isnull=True
+            user=user, session_id=session_id, revoked_at__isnull=True
         ).update(revoked_at=timezone.now())
         return Response({"detail": "Signed out."})
 
@@ -116,13 +128,14 @@ class SessionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = UserLoginSessionSerializer
     permission_classes = [OwnerOrAdmin]
 
-    def get_queryset(self):
+    def get_queryset(self):  # pyright: ignore[reportIncompatibleMethodOverride]
         qs = UserLoginSession.objects.select_related("user", "user__organization")
-        return qs if is_owner(self.request.user) else qs.filter(user__organization=self.request.user.organization)
+        user = _request_user(self.request)
+        return qs if is_owner(user) else qs.filter(user__organization=user.organization)
 
     @action(detail=True, methods=["post"])
     def revoke(self, request, pk=None):
-        session = self.get_object()
+        session = cast(UserLoginSession, self.get_object())
         session.revoked_at = timezone.now()
         session.save(update_fields=["revoked_at"])
         return Response({"detail": "Session revoked."})

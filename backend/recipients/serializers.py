@@ -23,21 +23,21 @@ class RecipientSerializer(serializers.ModelSerializer):
 
     def validate_recipient_list(self, value):
         organization = request_organization(self.context["request"])
-        if value.organization_id != organization.id:
+        if organization is None or value.organization_id != getattr(organization, "pk", None):
             raise serializers.ValidationError("This list does not belong to your organization.")
         return value
 
     def validate(self, attrs):
         if self.instance is None:
             organization = request_organization(self.context["request"])
-            if organization.recipients.count() >= organization.max_recipients:
+            if organization is not None and Recipient.objects.filter(organization=organization).count() >= organization.max_recipients:
                 raise serializers.ValidationError({"detail": "Recipient limit reached for this account."})
         return attrs
 
     @transaction.atomic
     def create(self, validated_data):
         organization = Organization.objects.select_for_update().get(pk=validated_data["organization"].pk)
-        if organization.recipients.count() >= organization.max_recipients:
+        if Recipient.objects.filter(organization=organization).count() >= organization.max_recipients:
             raise serializers.ValidationError({"detail": "Recipient limit reached for this account."})
         validated_data["organization"] = organization
         return super().create(validated_data)

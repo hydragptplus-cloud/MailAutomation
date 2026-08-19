@@ -25,8 +25,8 @@ def test_smtp(account, timeout=15):
         if username and password:
             server.login(username, password)
         return {"ok": True, "message": f"Successfully connected to SMTP server {host}:{port}"}
-    except Exception as exc:
-        return {"ok": False, "message": str(exc)}
+    except Exception:
+        return {"ok": False, "message": "SMTP connection test failed."}
     finally:
         try:
             server.quit()
@@ -78,8 +78,8 @@ def send_test_mail(account, recipient_email, subject="Test Email from Mail Flow"
             server.login(username, password)
         server.sendmail(from_email, [recipient_email], msg.as_string())
         return {"ok": True, "message": f"Test email successfully delivered to {recipient_email}"}
-    except Exception as exc:
-        return {"ok": False, "message": str(exc)}
+    except Exception:
+        return {"ok": False, "message": "Test email could not be delivered."}
     finally:
         try:
             server.quit()

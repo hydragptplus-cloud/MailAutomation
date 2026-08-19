@@ -35,6 +35,7 @@ export default function Subscribe() {
       if (window.turnstile && turnstileRef.current) {
         window.turnstile.render(turnstileRef.current, {
           sitekey: siteKey,
+          action: "checkout",
           callback: (token) => setTurnstileToken(token),
         });
       }

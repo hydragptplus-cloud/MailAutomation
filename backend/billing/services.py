@@ -5,6 +5,7 @@ import uuid
 from base64 import urlsafe_b64encode
 from datetime import timedelta
 from decimal import Decimal, ROUND_UP
+from typing import Any, cast
 from urllib.parse import quote
 
 import requests
@@ -349,7 +350,7 @@ def queue_invoice_email(invoice_id):
     from .tasks import send_invoice_email
 
     try:
-        send_invoice_email.delay(str(invoice_id))
+        cast(Any, send_invoice_email).delay(str(invoice_id))
     except Exception:
         pass
 
@@ -388,17 +389,18 @@ def assign_plan_to_organization(organization, plan, *, activate_organization=Fal
         },
     )
     if not created:
+        subscription_obj = cast(Any, subscription)
         needs_new_period = (
-            subscription.plan_id != plan.id
-            or subscription.status != Subscription.Status.ACTIVE
-            or subscription.current_period_end <= now
+            subscription_obj.plan_id != plan.id
+            or subscription_obj.status != Subscription.Status.ACTIVE
+            or subscription_obj.current_period_end <= now
         )
-        subscription.plan = plan
-        subscription.status = Subscription.Status.ACTIVE
+        subscription_obj.plan = plan
+        subscription_obj.status = Subscription.Status.ACTIVE
         if needs_new_period:
-            subscription.current_period_start = now
-            subscription.current_period_end = now + timedelta(days=30)
-        subscription.save()
+            subscription_obj.current_period_start = now
+            subscription_obj.current_period_end = now + timedelta(days=30)
+        subscription_obj.save()
     return subscription
 
 
@@ -423,7 +425,7 @@ def _create_customer(invoice_or_data, plan):
     apply_plan_to_organization(organization, plan)
     user = User(
         username=_unique_username(email), email=email, name=name, first_name=name,
-        role=User.Role.ADMIN, organization=organization, password=password_hash,
+        role=cast(Any, User).Role.ADMIN, organization=organization, password=password_hash,
     )
     user.save()
     organization.created_by = user
@@ -485,7 +487,7 @@ def create_invoice(validated_data):
         from .tasks import send_recovery_email
 
         try:
-            send_recovery_email.delay(customer_email)
+            cast(Any, send_recovery_email).delay(customer_email)
         except Exception:
             pass
         raise InvoiceConflict("A pending invoice already exists for this email. We sent a secure recovery link if it can still be used.")
@@ -710,34 +712,36 @@ def fulfill_paid_invoice(invoice_id, transfer):
             ledger.save(update_fields=("invoice", "resolution", "resolution_history", "updated_at"))
     except IntegrityError as exc:
         raise ValidationError({"detail": "This blockchain transfer has already been used."})
-    if invoice.organization_id:
-        organization = invoice.organization
-        apply_plan_to_organization(organization, invoice.plan)
+    invoice_obj = cast(Any, invoice)
+    if invoice_obj.organization_id:
+        organization = invoice_obj.organization
+        apply_plan_to_organization(organization, invoice_obj.plan)
         now = timezone.now()
         subscription, created = Subscription.objects.get_or_create(
             organization=organization,
             defaults={
-                "plan": invoice.plan, "status": Subscription.Status.ACTIVE,
+                "plan": invoice_obj.plan, "status": Subscription.Status.ACTIVE,
                 "current_period_start": now, "current_period_end": now + timedelta(days=30),
             },
         )
+        subscription_obj = cast(Any, subscription)
         same_active_plan = not created and (
-            subscription.plan_id == invoice.plan_id
-            and subscription.status == Subscription.Status.ACTIVE
-            and subscription.current_period_end > now
+            subscription_obj.plan_id == invoice_obj.plan_id
+            and subscription_obj.status == Subscription.Status.ACTIVE
+            and subscription_obj.current_period_end > now
         )
         if not created:
             if same_active_plan:
-                subscription.current_period_end += timedelta(days=30)
+                subscription_obj.current_period_end += timedelta(days=30)
             else:
-                subscription.plan = invoice.plan
-                subscription.current_period_start = now
-                subscription.current_period_end = now + timedelta(days=30)
-            subscription.status = Subscription.Status.ACTIVE
-            subscription.save()
+                subscription_obj.plan = invoice_obj.plan
+                subscription_obj.current_period_start = now
+                subscription_obj.current_period_end = now + timedelta(days=30)
+            subscription_obj.status = Subscription.Status.ACTIVE
+            subscription_obj.save()
     else:
-        organization, _ = _create_customer(invoice, invoice.plan)
-        invoice.organization = organization
+        organization, _ = _create_customer(invoice, invoice_obj.plan)
+        invoice_obj.organization = organization
     invoice.transaction_hash = transfer.transaction_hash
     invoice.transfer_index = transfer.transfer_index
     invoice.verification_data = transfer.raw
@@ -750,5 +754,5 @@ def fulfill_paid_invoice(invoice_id, transfer):
     audit_event("invoice_auto_activated", invoice=invoice, ledger=ledger)
     from .tasks import send_payment_confirmation_email
 
-    transaction.on_commit(lambda: send_payment_confirmation_email.delay(str(invoice.pk)))
+    transaction.on_commit(lambda: cast(Any, send_payment_confirmation_email).delay(str(invoice.pk)))
     return invoice

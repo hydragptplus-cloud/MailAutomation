@@ -50,9 +50,10 @@ class OrganizationUsageViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [OwnerOrAdmin]
     filterset_fields = ("organization", "date")
 
-    def get_queryset(self):
+    def get_queryset(self):  # pyright: ignore[reportIncompatibleMethodOverride]
         qs = OrganizationUsage.objects.select_related("organization")
-        return qs if is_owner(self.request.user) else qs.filter(organization=self.request.user.organization)
+        organization = getattr(self.request.user, "organization", None)
+        return qs if is_owner(self.request.user) else qs.filter(organization=organization)
 
 
 class AccountSummaryView(APIView):

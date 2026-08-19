@@ -1,4 +1,5 @@
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from typing import Any
 
 
 def is_owner(user):
@@ -42,9 +43,10 @@ def ensure_same_organization(organization, **objects):
 
 class TenantViewSetMixin:
     organization_field = "organization"
+    request: Any
 
     def get_queryset(self):
-        return scope_queryset(super().get_queryset(), self.request.user, self.organization_field)
+        return scope_queryset(super().get_queryset(), self.request.user, self.organization_field)  # pyright: ignore[reportAttributeAccessIssue]
 
     def perform_create(self, serializer):
         organization = request_organization(self.request)

@@ -76,7 +76,8 @@ def import_recipients(file_obj, recipient_list):
     )
     prospective = len(incoming_emails - existing)
     organization = Organization.objects.select_for_update().get(pk=recipient_list.organization_id)
-    if organization.recipients.count() + prospective > organization.max_recipients:
+    current_recipient_count = Recipient.objects.filter(organization=organization).count()
+    if current_recipient_count + prospective > organization.max_recipients:
         raise ValueError("Recipient limit reached for this account.")
 
     created = updated = skipped = 0

@@ -91,7 +91,7 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR.parent / "media"
-STORAGES = {
+STORAGES: dict[str, dict[str, object]] = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
@@ -185,7 +185,7 @@ MAIL_FLOW_SENDER_EMAIL = os.getenv("MAIL_FLOW_SENDER_EMAIL", os.getenv("DEFAULT_
 MAIL_FLOW_REPLY_TO = os.getenv("MAIL_FLOW_REPLY_TO", "")
 DEFAULT_FROM_EMAIL = f"{MAIL_FLOW_SENDER_NAME} <{MAIL_FLOW_SENDER_EMAIL}>"
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
-FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY")
+FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY") or ""
 if IS_PRODUCTION and not FIELD_ENCRYPTION_KEY:
     raise ImproperlyConfigured("FIELD_ENCRYPTION_KEY is required in production.")
 if IS_PRODUCTION:

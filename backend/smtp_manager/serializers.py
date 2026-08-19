@@ -16,7 +16,7 @@ class SMTPAccountSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if self.instance is None:
             organization = request_organization(self.context["request"])
-            if organization.smtp_accounts.count() >= organization.max_smtp_accounts:
+            if organization.smtp_accounts.count() >= organization.max_smtp_accounts: # type: ignore
                 raise serializers.ValidationError({"detail": "SMTP account limit reached for this account."})
             if not attrs.get("password"):
                 raise serializers.ValidationError({"password": "Password is required."})
@@ -26,7 +26,7 @@ class SMTPAccountSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop("password")
         organization = Organization.objects.select_for_update().get(pk=validated_data["organization"].pk)
-        if organization.smtp_accounts.count() >= organization.max_smtp_accounts:
+        if organization.smtp_accounts.count() >= organization.max_smtp_accounts: # type: ignore
             raise serializers.ValidationError({"detail": "SMTP account limit reached for this account."})
         validated_data["organization"] = organization
         obj = SMTPAccount(**validated_data)

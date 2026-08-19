@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from django.conf import settings
 from django.db import transaction
 from django.middleware.csrf import get_token
@@ -25,7 +27,8 @@ from .serializers import (
 from .services import (
     authorize_checkout_session, cancel_invoice, consume_precheckout_session, exchange_invoice_code,
     checkout_cookie_name, fulfill_paid_invoice, replace_invoice, resolve_manual_transfer,
-    provision_free_account, record_review_claim, start_checkout_email_verification, verify_checkout_email,
+    provision_free_account, record_review_claim, serialize_invoice_access, start_checkout_email_verification,
+    verify_checkout_email,
 )
 
 
@@ -59,7 +62,7 @@ class PlanAdminViewSet(viewsets.ModelViewSet):
     serializer_class = PlanAdminSerializer
     permission_classes = [OwnerOnly]
     queryset = Plan.objects.all().order_by("display_order", "price_bdt")
-    http_method_names = ("get", "post", "put", "patch", "head", "options")
+    http_method_names = ["get", "post", "put", "patch", "head", "options"]
 
 
 class PaymentReviewViewSet(viewsets.ReadOnlyModelViewSet):
@@ -113,9 +116,10 @@ class CheckoutEmailStartView(CsrfProtectedAPIView):
     def post(self, request):
         serializer = CheckoutEmailStartSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        validated_data = cast(dict[str, Any], serializer.validated_data or {})
         start_checkout_email_verification(
-            serializer.validated_data["email"],
-            serializer.validated_data.get("turnstile_token", ""),
+            validated_data["email"],
+            validated_data.get("turnstile_token", ""),
             request=request,
         )
         return Response({"detail": "If the address can continue, a verification code will be sent shortly."}, status=202)
@@ -129,9 +133,10 @@ class CheckoutEmailVerifyView(CsrfProtectedAPIView):
     def post(self, request):
         serializer = CheckoutEmailVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        validated_data = cast(dict[str, Any], serializer.validated_data or {})
         token = verify_checkout_email(
-            serializer.validated_data["email"],
-            serializer.validated_data["code"],
+            validated_data["email"],
+            validated_data["code"],
             request=request,
         )
         response = Response({"detail": "Email verified."}, status=202)
@@ -155,12 +160,13 @@ class InvoiceCreateView(CsrfProtectedAPIView):
     def post(self, request):
         serializer = InvoiceCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        if not consume_precheckout_session(request, serializer.validated_data["email"]):
+        validated_data = cast(dict[str, Any], serializer.validated_data or {})
+        if not consume_precheckout_session(request, validated_data["email"]):
             existing = None
-            idempotency_key = (serializer.validated_data.get("idempotency_key", "") or "").strip()[:96]
+            idempotency_key = (validated_data.get("idempotency_key", "") or "").strip()[:96]
             if idempotency_key:
                 existing = PaymentInvoice.objects.filter(
-                    normalized_customer_email=serializer.validated_data["email"],
+                    normalized_customer_email=validated_data["email"],
                     idempotency_key=idempotency_key,
                     status__in=(PaymentInvoice.Status.PENDING, PaymentInvoice.Status.VERIFYING, PaymentInvoice.Status.EXPIRED),
                 ).order_by("-created_at").first()
@@ -168,15 +174,15 @@ class InvoiceCreateView(CsrfProtectedAPIView):
                 from .services import normalized_org_name
 
                 existing = PaymentInvoice.objects.filter(
-                    normalized_customer_email=serializer.validated_data["email"],
-                    normalized_organization_name=normalized_org_name(serializer.validated_data["organization_name"]),
+                    normalized_customer_email=validated_data["email"],
+                    normalized_organization_name=normalized_org_name(validated_data["organization_name"]),
                     status__in=(PaymentInvoice.Status.PENDING, PaymentInvoice.Status.VERIFYING),
                     expires_at__gt=timezone.now(),
                 ).order_by("-created_at").first()
             if not existing or not authorize_checkout_session(request, existing):
                 return Response({"detail": "Verify your email before creating a paid invoice."}, status=403)
         invoice, token, created = serializer.save()
-        data = InvoiceSerializer(invoice).data
+        data = dict(InvoiceSerializer(invoice).data)
         response = Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
         response.delete_cookie(_cookie_name(settings.PRECHECKOUT_SESSION_COOKIE_NAME), path="/")
         return _set_checkout_cookie(response, token)
@@ -233,7 +239,7 @@ def _set_checkout_cookie(response, token):
 
 
 def _invoice_response(invoice, token=None, response_status=200):
-    data = InvoiceSerializer(invoice).data
+    data = dict(InvoiceSerializer(invoice).data)
     if token:
         data.update(serialize_invoice_access(invoice, token))
     return Response(data, status=response_status)
@@ -269,7 +275,7 @@ def _mark_manual_review(invoice, transfer):
     ))
     from .tasks import send_manual_review_email
 
-    transaction.on_commit(lambda: send_manual_review_email.delay(str(invoice.pk)))
+    transaction.on_commit(lambda: cast(Any, send_manual_review_email).delay(str(invoice.pk)))
     return invoice
 
 
@@ -339,6 +345,7 @@ class InvoiceVerifyView(CsrfProtectedAPIView):
     def post(self, request, invoice_id):
         submission = TransactionSubmissionSerializer(data=request.data)
         submission.is_valid(raise_exception=True)
+        validated_submission = cast(dict[str, Any], submission.validated_data or {})
         restore_status = PaymentInvoice.Status.PENDING
         try:
             with transaction.atomic():
@@ -359,7 +366,7 @@ class InvoiceVerifyView(CsrfProtectedAPIView):
                 invoice.status = PaymentInvoice.Status.VERIFYING
                 invoice.verification_error = ""
                 invoice.save(update_fields=("status", "verification_error", "updated_at"))
-            transfer = verify_invoice_transfer(invoice, submission.validated_data["transaction"])
+            transfer = verify_invoice_transfer(invoice, validated_submission["transaction"])
             if _transfer_was_after_expiry(invoice, transfer):
                 with transaction.atomic():
                     invoice = PaymentInvoice.objects.select_for_update(of=("self",)).get(pk=invoice_id)
@@ -395,7 +402,8 @@ class InvoiceRecoverView(CsrfProtectedAPIView):
         serializer.is_valid(raise_exception=True)
         from .tasks import send_recovery_email
 
-        send_recovery_email.delay(serializer.validated_data["email"])
+        validated_data = cast(dict[str, Any], serializer.validated_data or {})
+        cast(Any, send_recovery_email).delay(validated_data["email"])
         return Response({"detail": "If an active invoice exists for that email, a secure link will be sent shortly."}, status=202)
 
 
@@ -414,7 +422,8 @@ class InvoiceReplaceView(CsrfProtectedAPIView):
             return auth_result
         serializer = InvoiceReplaceSerializer(data=request.data, context={"invoice": invoice})
         serializer.is_valid(raise_exception=True)
-        new_invoice, token = replace_invoice(invoice, serializer.validated_data["password_hash"])
+        validated_data = cast(dict[str, Any], serializer.validated_data or {})
+        new_invoice, token = replace_invoice(invoice, validated_data["password_hash"])
         return _set_checkout_cookie(_invoice_response(new_invoice, response_status=201), token)
 
 
