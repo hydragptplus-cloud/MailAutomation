@@ -4,7 +4,7 @@ from django.test import SimpleTestCase, override_settings
 from rest_framework.exceptions import ValidationError
 
 from .tasks import send_checkout_otp_email
-from .services import verify_turnstile
+from .services import send_checkout_otp, verify_turnstile
 
 
 class TurnstileVerificationTests(SimpleTestCase):
@@ -51,3 +51,29 @@ class CheckoutOtpTaskTests(SimpleTestCase):
 
         self.assertEqual(result, "sent")
         send_checkout_otp.assert_called_once_with("hydragptplus@gmail.com", "123456")
+
+    @override_settings(MAIL_FLOW_OTP_RELAY_URL="", MAIL_FLOW_OTP_RELAY_SECRET="")
+    @patch("billing.services.send_mail")
+    def test_checkout_otp_uses_django_email_without_relay(self, send_mail):
+        send_checkout_otp("buyer@example.com", "123456")
+
+        send_mail.assert_called_once()
+        self.assertEqual(send_mail.call_args.args[3], ["buyer@example.com"])
+
+    @override_settings(
+        MAIL_FLOW_OTP_RELAY_URL="https://mail.annomous.com/mailflow-otp-relay.php",
+        MAIL_FLOW_OTP_RELAY_SECRET="test-secret",
+        MAIL_FLOW_OTP_RELAY_TIMEOUT=10,
+    )
+    @patch("billing.services.requests.post")
+    @patch("billing.services.send_mail")
+    def test_checkout_otp_uses_signed_php_relay_when_configured(self, send_mail, post):
+        post.return_value = Mock()
+
+        send_checkout_otp("buyer@example.com", "123456")
+
+        send_mail.assert_not_called()
+        post.assert_called_once()
+        self.assertEqual(post.call_args.kwargs["json"]["email"], "buyer@example.com")
+        self.assertEqual(post.call_args.kwargs["json"]["code"], "123456")
+        self.assertIn("X-Mail-Flow-Signature", post.call_args.kwargs["headers"])

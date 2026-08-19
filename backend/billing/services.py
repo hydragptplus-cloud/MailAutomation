@@ -1,6 +1,8 @@
 import hashlib
 import hmac
+import json
 import secrets
+import time
 import uuid
 from base64 import urlsafe_b64encode
 from datetime import timedelta
@@ -125,6 +127,29 @@ def verify_turnstile(token, request):
 
 
 def send_checkout_otp(email, code):
+    relay_url = getattr(settings, "MAIL_FLOW_OTP_RELAY_URL", "")
+    relay_secret = getattr(settings, "MAIL_FLOW_OTP_RELAY_SECRET", "")
+    if relay_url and relay_secret:
+        timestamp = str(int(time.time()))
+        body = {
+            "email": email,
+            "code": code,
+            "timestamp": timestamp,
+        }
+        signed_payload = json.dumps(body, separators=(",", ":"), sort_keys=True)
+        signature = hmac.new(relay_secret.encode(), signed_payload.encode(), hashlib.sha256).hexdigest()
+        response = requests.post(
+            relay_url,
+            json=body,
+            headers={
+                "X-Mail-Flow-Signature": signature,
+                "X-Mail-Flow-Timestamp": timestamp,
+            },
+            timeout=getattr(settings, "MAIL_FLOW_OTP_RELAY_TIMEOUT", 10),
+        )
+        response.raise_for_status()
+        return
+
     send_mail(
         "Verify your Mail Flow checkout",
         f"Your Mail Flow checkout code is {code}. It expires in 10 minutes.",
