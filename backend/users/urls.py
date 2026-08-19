@@ -1,0 +1,15 @@
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+from .views import ChangePasswordView, LogoutView, ProfileView, SessionViewSet, SettingsView, UserViewSet
+
+router = DefaultRouter()
+router.register("users", UserViewSet, basename="user")
+router.register("sessions", SessionViewSet, basename="session")
+
+urlpatterns = [
+    path("", include(router.urls)),
+    path("settings/", SettingsView.as_view(), name="settings"),
+    path("profile/", ProfileView.as_view(), name="profile"),
+    path("profile/change-password/", ChangePasswordView.as_view(), name="change-password"),
+    path("auth/logout/", LogoutView.as_view(), name="logout"),
+]
