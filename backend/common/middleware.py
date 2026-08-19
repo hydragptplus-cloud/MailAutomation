@@ -9,5 +9,5 @@ class SecurityHeadersMiddleware:
         response = self.get_response(request)
         if getattr(settings, "CONTENT_SECURITY_POLICY", ""):
             response.setdefault("Content-Security-Policy", settings.CONTENT_SECURITY_POLICY)
-        response.setdefault("Referrer-Policy", "no-referrer")
+        response.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         return response
