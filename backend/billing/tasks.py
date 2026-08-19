@@ -38,6 +38,14 @@ def _record_delivery(invoice_id, sent_field, error_field, *, error=""):
     PaymentInvoice.objects.filter(pk=invoice_id).update(**values)
 
 
+@shared_task(**EMAIL_TASK_OPTIONS)
+def send_checkout_otp_email(email, code):
+    from .services import send_checkout_otp
+
+    send_checkout_otp(email, code)
+    return "sent"
+
+
 def _invoice_link(invoice):
     from .models import InvoiceAccessCode
     from .services import decrypt_invoice_access_code, invoice_resume_url, issue_invoice_access_code, revoke_invoice_access

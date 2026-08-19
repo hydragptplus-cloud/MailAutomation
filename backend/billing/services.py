@@ -148,7 +148,9 @@ def start_checkout_email_verification(email, turnstile_token, *, request=None):
         code_digest=private_hash(code),
         expires_at=timezone.now() + timedelta(minutes=10),
     )
-    transaction.on_commit(lambda: send_checkout_otp(email, code))
+    from .tasks import send_checkout_otp_email
+
+    transaction.on_commit(lambda: cast(Any, send_checkout_otp_email).delay(email, code))
     audit_event("checkout_email_otp_started", request=request, metadata={"email_hash": private_hash(email)})
 
 
