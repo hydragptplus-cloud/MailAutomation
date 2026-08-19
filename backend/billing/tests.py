@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 from django.test import SimpleTestCase, override_settings
 from rest_framework.exceptions import ValidationError
 
+from .tasks import send_checkout_otp_email
 from .services import verify_turnstile
 
 
@@ -41,3 +42,12 @@ class TurnstileVerificationTests(SimpleTestCase):
             request = Mock(META={"REMOTE_ADDR": "127.0.0.1"})
 
             verify_turnstile("token", request=request)
+
+
+class CheckoutOtpTaskTests(SimpleTestCase):
+    @patch("billing.services.send_checkout_otp")
+    def test_checkout_otp_task_sends_requested_code(self, send_checkout_otp):
+        result = send_checkout_otp_email.run("hydragptplus@gmail.com", "123456")
+
+        self.assertEqual(result, "sent")
+        send_checkout_otp.assert_called_once_with("hydragptplus@gmail.com", "123456")

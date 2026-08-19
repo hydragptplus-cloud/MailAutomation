@@ -486,6 +486,30 @@ Use the same backend Dockerfile or backend runtime, but set the start command to
 celery -A config worker -l INFO --concurrency=4
 ```
 
+#### Two-service free-tier option
+
+If the plan allows only two application services, use one backend service and one combined Celery service. Replace the worker command above with:
+
+```bash
+celery -A config worker --beat -l INFO --concurrency=4
+```
+
+The `--beat` flag runs the scheduler inside the worker process. This combined service handles checkout OTP tasks, campaign email tasks, and scheduled jobs. Use this option instead of creating a separate Celery Beat service.
+
+This worker service is required for checkout OTP delivery as well as campaign email delivery. Redeploy it whenever backend task code changes; deploying only the web service or Celery Beat does not update the worker's registered task list.
+
+After deployment, run this command in the worker service or Railway shell:
+
+```bash
+celery -A config inspect registered
+```
+
+The output must include:
+
+```text
+billing.tasks.send_checkout_otp_email
+```
+
 Set all backend runtime variables on this service too, plus:
 
 ```text
@@ -496,7 +520,9 @@ The worker must share the same `DATABASE_URL`, `REDIS_URL`, `FIELD_ENCRYPTION_KE
 
 ### 7. Create the Celery Beat Service
 
-Create a third Railway service from the same repository and same release.
+For the standard three-service deployment, create a third Railway service from the same repository and same release.
+
+For the two-service free-tier deployment, do not create this service. The worker must use `celery -A config worker --beat -l INFO --concurrency=4` instead.
 
 Start command:
 
@@ -511,6 +537,8 @@ SKIP_MIGRATIONS=1
 ```
 
 Run exactly one Celery Beat service. Multiple Beat services can duplicate scheduled campaign dispatch and invoice expiry.
+
+Celery Beat only publishes scheduled jobs. It does not send checkout OTP emails and must not replace the Celery Worker service.
 
 ### 8. Configure Railway Custom Domain
 
