@@ -219,7 +219,7 @@ TURNSTILE_EXPECTED_HOSTNAME = os.getenv("TURNSTILE_EXPECTED_HOSTNAME", "")
 TURNSTILE_CHECKOUT_ACTION = os.getenv("TURNSTILE_CHECKOUT_ACTION", "checkout")
 CONTENT_SECURITY_POLICY = os.getenv(
     "CONTENT_SECURITY_POLICY",
-    "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+    "default-src 'self'; script-src 'self' https://challenges.cloudflare.com https://*.challenges.cloudflare.com; frame-src https://challenges.cloudflare.com https://*.challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com https://*.challenges.cloudflare.com; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
 )
 
 SIMPLE_JWT = {
