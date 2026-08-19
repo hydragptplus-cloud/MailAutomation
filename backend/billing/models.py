@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
@@ -84,7 +85,7 @@ class PaymentInvoice(models.Model):
     usdt_bdt_rate = models.DecimalField(max_digits=12, decimal_places=4)
     amount_usdt = models.DecimalField(max_digits=20, decimal_places=6)
     token_decimals = models.PositiveSmallIntegerField(default=6)
-    amount_raw = models.DecimalField(max_digits=48, decimal_places=0, default=0)
+    amount_raw = models.DecimalField(max_digits=48, decimal_places=0, default=Decimal("0"))
     snapshot_limits = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
     transaction_hash = models.CharField(max_length=128, null=True, blank=True)
