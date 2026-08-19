@@ -12,14 +12,17 @@ function getCookie(name) {
 }
 
 async function ensureCsrf() {
-  if (!getCookie("csrftoken")) await publicClient.get("/billing/csrf/");
+  const cookieToken = getCookie("csrftoken");
+  if (cookieToken) return decodeURIComponent(cookieToken);
+  const response = await publicClient.get("/billing/csrf/");
+  return response.data?.csrfToken || "";
 }
 
 publicClient.interceptors.request.use(async (config) => {
   const method = (config.method || "get").toLowerCase();
   if (!["get", "head", "options", "trace"].includes(method)) {
-    await ensureCsrf();
-    config.headers["X-CSRFToken"] = decodeURIComponent(getCookie("csrftoken"));
+    const csrfToken = await ensureCsrf();
+    config.headers["X-CSRFToken"] = csrfToken;
   }
   return config;
 });
