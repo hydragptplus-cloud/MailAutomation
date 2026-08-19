@@ -4,6 +4,7 @@ from django.test import SimpleTestCase, override_settings
 from rest_framework.exceptions import ValidationError
 
 from .tasks import send_checkout_otp_email
+from .tasks import _send_message
 from .services import send_checkout_otp, verify_turnstile
 
 
@@ -76,4 +77,23 @@ class CheckoutOtpTaskTests(SimpleTestCase):
         post.assert_called_once()
         self.assertEqual(post.call_args.kwargs["json"]["email"], "buyer@example.com")
         self.assertEqual(post.call_args.kwargs["json"]["code"], "123456")
+        self.assertIn("X-Mail-Flow-Signature", post.call_args.kwargs["headers"])
+
+    @override_settings(
+        MAIL_FLOW_OTP_RELAY_URL="https://mail.annomous.com/mailflow-otp-relay.php",
+        MAIL_FLOW_OTP_RELAY_SECRET="test-secret",
+        MAIL_FLOW_OTP_RELAY_TIMEOUT=10,
+    )
+    @patch("billing.tasks.requests.post")
+    @patch("billing.tasks.EmailMultiAlternatives")
+    def test_billing_message_uses_signed_php_relay_when_configured(self, email_message, post):
+        post.return_value = Mock()
+
+        _send_message("Resume your USDT payment - Mail Flow", "Secure payment link: https://example.com", "buyer@example.com")
+
+        email_message.assert_not_called()
+        post.assert_called_once()
+        self.assertEqual(post.call_args.kwargs["json"]["email"], "buyer@example.com")
+        self.assertEqual(post.call_args.kwargs["json"]["subject"], "Resume your USDT payment - Mail Flow")
+        self.assertIn("Secure payment link", post.call_args.kwargs["json"]["body"])
         self.assertIn("X-Mail-Flow-Signature", post.call_args.kwargs["headers"])

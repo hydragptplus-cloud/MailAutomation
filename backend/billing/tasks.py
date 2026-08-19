@@ -1,9 +1,14 @@
+import hashlib
+import hmac
+import json
+import time
 from typing import Any
 
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.utils import timezone
+import requests
 
 from .models import PaymentInvoice, Subscription
 
@@ -18,6 +23,32 @@ EMAIL_TASK_OPTIONS = {
 
 
 def _send_message(subject, body, recipient, html=None):
+    relay_url = getattr(settings, "MAIL_FLOW_OTP_RELAY_URL", "")
+    relay_secret = getattr(settings, "MAIL_FLOW_OTP_RELAY_SECRET", "")
+    if relay_url and relay_secret:
+        timestamp = str(int(time.time()))
+        payload = {
+            "email": recipient,
+            "subject": subject,
+            "body": body,
+            "timestamp": timestamp,
+        }
+        if html:
+            payload["html"] = html
+        signed_payload = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+        signature = hmac.new(relay_secret.encode(), signed_payload.encode(), hashlib.sha256).hexdigest()
+        response = requests.post(
+            relay_url,
+            json=payload,
+            headers={
+                "X-Mail-Flow-Signature": signature,
+                "X-Mail-Flow-Timestamp": timestamp,
+            },
+            timeout=getattr(settings, "MAIL_FLOW_OTP_RELAY_TIMEOUT", 10),
+        )
+        response.raise_for_status()
+        return
+
     reply_to = [settings.MAIL_FLOW_REPLY_TO] if settings.MAIL_FLOW_REPLY_TO else None
     message = EmailMultiAlternatives(
         subject=subject,
