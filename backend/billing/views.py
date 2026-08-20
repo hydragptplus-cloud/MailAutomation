@@ -36,6 +36,10 @@ def _cookie_name(name):
     return checkout_cookie_name(name)
 
 
+def _checkout_cookie_samesite():
+    return getattr(settings, "CHECKOUT_SESSION_COOKIE_SAMESITE", "None" if settings.CHECKOUT_SESSION_COOKIE_SECURE else "Lax")
+
+
 class CsrfProtectedAPIView(APIView):
     @method_decorator(csrf_protect)
     def dispatch(self, *args, **kwargs):
@@ -146,7 +150,7 @@ class CheckoutEmailVerifyView(CsrfProtectedAPIView):
             max_age=20 * 60,
             secure=settings.CHECKOUT_SESSION_COOKIE_SECURE,
             httponly=True,
-            samesite="Strict",
+            samesite=_checkout_cookie_samesite(),
             path="/",
         )
         return response
@@ -184,7 +188,11 @@ class InvoiceCreateView(CsrfProtectedAPIView):
         invoice, token, created = serializer.save()
         data = dict(InvoiceSerializer(invoice).data)
         response = Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
-        response.delete_cookie(_cookie_name(settings.PRECHECKOUT_SESSION_COOKIE_NAME), path="/")
+        response.delete_cookie(
+            _cookie_name(settings.PRECHECKOUT_SESSION_COOKIE_NAME),
+            path="/",
+            samesite=_checkout_cookie_samesite(),
+        )
         return _set_checkout_cookie(response, token)
 
 
@@ -232,7 +240,7 @@ def _set_checkout_cookie(response, token):
         max_age=12 * 60 * 60,
         secure=settings.CHECKOUT_SESSION_COOKIE_SECURE,
         httponly=True,
-        samesite="Strict",
+        samesite=_checkout_cookie_samesite(),
         path="/",
     )
     return response

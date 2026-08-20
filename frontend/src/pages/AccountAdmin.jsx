@@ -35,7 +35,7 @@ export default function AccountAdmin() {
 
   const beginUpgrade = async () => {
     setUpgrading(true); setError("");
-    try { const invoice = await createAccountInvoice(upgrade); navigate(`/payment/${invoice.id}`); }
+    try { const invoice = await createAccountInvoice(upgrade); navigate(`/payment/${invoice.id || "current"}`); }
     catch (e) { setError(e.response?.data?.detail || "Unable to create subscription invoice."); }
     finally { setUpgrading(false); }
   };

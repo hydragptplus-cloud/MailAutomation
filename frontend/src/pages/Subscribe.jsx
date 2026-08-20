@@ -84,8 +84,8 @@ export default function Subscribe() {
           setEmailVerified(true);
           return;
         }
-        await createInvoice({ ...form, plan_slug: plan.slug, idempotency_key: idempotencyKey });
-        navigate("/payment/current");
+        const invoice = await createInvoice({ ...form, plan_slug: plan.slug, idempotency_key: idempotencyKey });
+        navigate(`/payment/${invoice.id || "current"}`);
       }
     } catch (err) { setError(apiError(err)); } finally { setLoading(false); }
   }
