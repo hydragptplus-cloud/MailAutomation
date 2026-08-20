@@ -178,6 +178,10 @@ class TransactionSubmissionSerializer(serializers.Serializer):
     transaction = serializers.CharField(max_length=500)
 
 
+class BscTransactionInspectSerializer(serializers.Serializer):
+    transaction = serializers.CharField(max_length=500)
+
+
 class CheckoutEmailStartSerializer(serializers.Serializer):
     email = serializers.EmailField()
     turnstile_token = serializers.CharField(required=False, allow_blank=True, max_length=4096)

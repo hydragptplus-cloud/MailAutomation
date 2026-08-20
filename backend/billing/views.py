@@ -16,13 +16,13 @@ from rest_framework.views import APIView
 from rest_framework import viewsets
 from common.permissions import OwnerOnly
 
-from .blockchain import VerificationError, verify_invoice_transfer
+from .blockchain import VerificationError, inspect_bsc_wallet_transfer, verify_invoice_transfer
 from .models import PaymentInvoice, PaymentTransferLedger, Plan
 from .serializers import (
     AccountInvoiceCreateSerializer, CheckoutEmailStartSerializer, CheckoutEmailVerifySerializer,
     FreeSignupSerializer, InvoiceCreateSerializer, InvoiceRecoverSerializer, InvoiceReplaceSerializer,
     InvoiceSerializer, ManualReviewActionSerializer, PaymentTransferLedgerSerializer, PlanAdminSerializer,
-    PlanSerializer, TransactionSubmissionSerializer,
+    PlanSerializer, BscTransactionInspectSerializer, TransactionSubmissionSerializer,
 )
 from .services import (
     authorize_checkout_session, cancel_invoice, consume_precheckout_session, exchange_invoice_code,
@@ -93,6 +93,27 @@ class PaymentReviewViewSet(viewsets.ReadOnlyModelViewSet):
             refund_transaction_hash=serializer.validated_data.get("refund_transaction_hash", ""),
         )
         return Response(PaymentTransferLedgerSerializer(ledger).data)
+
+
+class BscTransactionInspectView(APIView):
+    permission_classes = [OwnerOnly]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "transaction_verify"
+
+    def post(self, request):
+        serializer = BscTransactionInspectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = cast(dict[str, Any], serializer.validated_data or {})
+        try:
+            return Response(inspect_bsc_wallet_transfer(validated_data["transaction"]))
+        except VerificationError as exc:
+            return Response({
+                "found": False,
+                "matched_wallet": False,
+                "reason": str(exc),
+                "transfers": [],
+                "matching_transfers": [],
+            }, status=400)
 
 
 class FreeSignupView(APIView):

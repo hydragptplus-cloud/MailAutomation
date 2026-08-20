@@ -1,7 +1,7 @@
 from django.urls import path
 
 from .views import (
-    AccountInvoiceCreateView, CheckoutEmailStartView, CheckoutEmailVerifyView, FreeSignupView,
+    AccountInvoiceCreateView, BscTransactionInspectView, CheckoutEmailStartView, CheckoutEmailVerifyView, FreeSignupView,
     CsrfBootstrapView, CurrentInvoiceView, InvoiceCancelView, InvoiceCreateView, InvoiceDetailView, InvoiceRecoverView, InvoiceReplaceView,
     InvoiceSessionExchangeView, InvoiceVerifyView,
     PaymentReviewViewSet, PlanAdminViewSet, PlanListView,
@@ -20,6 +20,7 @@ urlpatterns = [
     path("platform/payment-reviews/", review_list, name="platform-payment-review-list"),
     path("platform/payment-reviews/<int:pk>/", review_detail, name="platform-payment-review-detail"),
     path("platform/payment-reviews/<int:pk>/action/", review_action, name="platform-payment-review-action"),
+    path("platform/bsc-transaction-inspect/", BscTransactionInspectView.as_view(), name="platform-bsc-transaction-inspect"),
     path("signup/free/", FreeSignupView.as_view(), name="free-signup"),
     path("checkout/email/start/", CheckoutEmailStartView.as_view(), name="checkout-email-start"),
     path("checkout/email/verify/", CheckoutEmailVerifyView.as_view(), name="checkout-email-verify"),

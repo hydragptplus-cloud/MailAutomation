@@ -119,6 +119,63 @@ def _verify_evm(invoice, tx_hash):
     })
 
 
+def inspect_bsc_wallet_transfer(submitted_hash, wallet=None):
+    tx_hash = extract_transaction_hash(submitted_hash, "bsc")
+    target_contract = settings.USDT_BSC_CONTRACT.lower()
+    target_recipient = (wallet or get_runtime_billing_configuration().payment_evm_wallet).lower().removeprefix("0x")
+    receipt = _rpc(settings.BSC_RPC_URL, "eth_getTransactionReceipt", [tx_hash])
+    if not receipt:
+        return {
+            "found": False,
+            "matched_wallet": False,
+            "transaction_hash": tx_hash,
+            "reason": "Transaction was not found by the configured BSC RPC provider.",
+            "wallet": f"0x{target_recipient}",
+            "contract": settings.USDT_BSC_CONTRACT,
+            "transfers": [],
+        }
+    block_number = int(receipt["blockNumber"], 16)
+    latest = int(_rpc(settings.BSC_RPC_URL, "eth_blockNumber", []), 16)
+    block = _rpc(settings.BSC_RPC_URL, "eth_getBlockByNumber", [receipt["blockNumber"], False])
+    occurred_at = _typed_occurred_at(int(block["timestamp"], 16))
+    transfers = []
+    for log in receipt.get("logs", []):
+        topics = [topic.lower() for topic in log.get("topics", [])]
+        if len(topics) < 3 or topics[0] != TRANSFER_TOPIC:
+            continue
+        amount_raw = int(log.get("data", "0x0"), 16)
+        recipient = topics[2][-40:]
+        contract = log.get("address", "")
+        transfers.append({
+            "log_index": int(log.get("logIndex", "0x0"), 16),
+            "contract": contract,
+            "from": f"0x{topics[1][-40:]}",
+            "to": f"0x{recipient}",
+            "amount": str(Decimal(amount_raw) / (Decimal(10) ** 18)),
+            "amount_raw": str(amount_raw),
+            "matches_contract": contract.lower() == target_contract,
+            "matches_wallet": recipient == target_recipient,
+        })
+    matched = [
+        transfer for transfer in transfers
+        if transfer["matches_contract"] and transfer["matches_wallet"]
+    ]
+    return {
+        "found": True,
+        "matched_wallet": bool(matched),
+        "transaction_hash": tx_hash,
+        "status": "success" if int(receipt.get("status", "0x0"), 16) == 1 else "failed",
+        "block_number": block_number,
+        "confirmations": latest - block_number + 1,
+        "occurred_at": occurred_at.isoformat(),
+        "wallet": f"0x{target_recipient}",
+        "contract": settings.USDT_BSC_CONTRACT,
+        "transfers": transfers,
+        "matching_transfers": matched,
+        "reason": "" if matched else "No BSC USDT transfer to the configured wallet was found in this transaction.",
+    }
+
+
 def _tron_headers():
     api_key = get_runtime_billing_configuration().tron_api_key
     return {"TRON-PRO-API-KEY": api_key} if api_key else {}
