@@ -104,7 +104,8 @@ class BillingConfigurationSerializer(serializers.ModelSerializer):
         fields = (
             "usdt_bdt_rate", "payment_evm_wallet", "payment_tron_wallet", "payment_ton_wallet",
             "tron_api_key", "toncenter_api_key", "clear_tron_api_key", "clear_toncenter_api_key",
-            "tron_api_key_configured", "toncenter_api_key_configured", "updated_by_email", "updated_at",
+            "tron_api_key_configured", "toncenter_api_key_configured", "public_landing_monitor_active",
+            "updated_by_email", "updated_at",
         )
         read_only_fields = ("tron_api_key_configured", "toncenter_api_key_configured", "updated_by_email", "updated_at")
 

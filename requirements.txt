@@ -17,3 +17,5 @@ beautifulsoup4==4.13.3
 requests==2.32.3
 gunicorn==23.0.0
 vercel-blob==0.4.2
+pyotp==2.9.0
+qrcode==7.4.2

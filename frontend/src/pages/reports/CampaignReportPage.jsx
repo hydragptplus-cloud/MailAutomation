@@ -125,8 +125,8 @@ export default function CampaignReportPage() {
   const logColumns = [
     { key: "recipient_email", header: "Recipient Email", render: (val, row) => <span className="font-mono text-slate-200">{val || row.email}</span> },
     { key: "status", header: "Status", render: (val) => <StatusBadge status={val} /> },
-    { key: "message", header: "Server Response", render: (val, row) => <span className="font-mono text-xs text-slate-300">{val || row.message || "—"}</span> },
-    { key: "sent_at", header: "Timestamp", render: (val) => (val ? new Date(val).toLocaleString() : "—") },
+    { key: "message", header: "Server Response", render: (val, row) => <span className="font-mono text-xs text-slate-300">{val || row.message || "-"}</span> },
+    { key: "sent_at", header: "Timestamp", render: (val) => (val ? new Date(val).toLocaleString() : "-") },
   ];
 
   return (
@@ -208,7 +208,7 @@ export default function CampaignReportPage() {
             <div key={idx} className="flex items-center gap-3 text-xs">
               <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
               <span className="font-semibold text-slate-200">{item.stage}</span>
-              <span className="text-slate-400">— {new Date(item.timestamp).toLocaleString()}</span>
+              <span className="text-slate-400">- {new Date(item.timestamp).toLocaleString()}</span>
             </div>
           ))}
         </div>

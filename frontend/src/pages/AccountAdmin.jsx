@@ -156,10 +156,10 @@ export default function AccountAdmin() {
                   value: plan.slug,
                   label:
                     plan.discount_percent > 0
-                      ? `${plan.name} — ৳${plan.price_bdt.toLocaleString()} (${plan.discount_percent}% off, was ৳${(
+                      ? `${plan.name} - ৳${plan.price_bdt.toLocaleString()} (${plan.discount_percent}% off, was ৳${(
                         plan.original_price_bdt || plan.price_bdt
                       ).toLocaleString()})`
-                      : `${plan.name} — ৳${plan.price_bdt.toLocaleString()}`,
+                      : `${plan.name} - ৳${plan.price_bdt.toLocaleString()}`,
                 }))}
               ariaLabel="Subscription plan"
             />
@@ -188,7 +188,7 @@ export default function AccountAdmin() {
         </section>
       )}
 
-      {/* User Management — redirect to Settings */}
+      {/* User Management - redirect to Settings */}
       {role === "admin" && (
         <section className="p-5 bg-slate-900 border border-slate-800 rounded-2xl">
           <div className="flex items-center justify-between">

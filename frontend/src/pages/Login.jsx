@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
@@ -11,12 +11,15 @@ import {
   Sparkles,
   Loader2,
   ArrowRight,
+  ArrowLeft,
   ShieldCheck,
   Zap,
   Activity,
   CheckCircle2,
+  KeyRound,
 } from "lucide-react";
 import { setTokens, setUser } from "../utils/auth";
+import twoFactorApi from "../services/twoFactorApi";
 
 const apiBase = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
@@ -32,6 +35,22 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // 2FA State
+  const [twoFactorStep, setTwoFactorStep] = useState(false);
+  const [challengeToken, setChallengeToken] = useState("");
+  const [challengeEmail, setChallengeEmail] = useState("");
+  const [otpDigits, setOtpDigits] = useState(["", "", "", "", "", ""]);
+  const [useBackupCode, setUseBackupCode] = useState(false);
+  const [backupCode, setBackupCode] = useState("");
+  const digitRefs = useRef([]);
+
+  // Auto-focus first digit when 2FA step activates
+  useEffect(() => {
+    if (twoFactorStep && !useBackupCode && digitRefs.current[0]) {
+      setTimeout(() => digitRefs.current[0]?.focus(), 100);
+    }
+  }, [twoFactorStep, useBackupCode]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -50,12 +69,24 @@ export default function Login() {
         password,
       });
 
-      const { access, refresh, user } = response.data;
+      const data = response.data;
+
+      // Check if 2FA is required
+      if (data.two_factor_required) {
+        setChallengeToken(data.challenge_token);
+        setChallengeEmail(data.email || username);
+        setTwoFactorStep(true);
+        setOtpDigits(["", "", "", "", "", ""]);
+        setBackupCode("");
+        setError("");
+        setLoading(false);
+        return;
+      }
+
+      // Normal login (no 2FA)
+      const { access, refresh, user } = data;
       setTokens(access, refresh);
-
-      // Save user details
       setUser(user);
-
       navigate("/dashboard", { replace: true });
     } catch (err) {
       const detail =
@@ -67,7 +98,228 @@ export default function Login() {
     }
   };
 
+  const handleDigitChange = (index, value) => {
+    // Only allow digits
+    const digit = value.replace(/\D/g, "").slice(-1);
+    const newDigits = [...otpDigits];
+    newDigits[index] = digit;
+    setOtpDigits(newDigits);
 
+    // Auto-advance to next input
+    if (digit && index < 5 && digitRefs.current[index + 1]) {
+      digitRefs.current[index + 1].focus();
+    }
+
+    // Auto-submit when all 6 digits are filled
+    if (digit && index === 5) {
+      const code = newDigits.join("");
+      if (code.length === 6) {
+        handleVerify2FA(code);
+      }
+    }
+  };
+
+  const handleDigitKeyDown = (index, e) => {
+    if (e.key === "Backspace" && !otpDigits[index] && index > 0) {
+      digitRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleDigitPaste = (e) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (pasted.length > 0) {
+      const newDigits = [...otpDigits];
+      for (let i = 0; i < 6; i++) {
+        newDigits[i] = pasted[i] || "";
+      }
+      setOtpDigits(newDigits);
+      // Focus the next empty or last
+      const focusIndex = Math.min(pasted.length, 5);
+      digitRefs.current[focusIndex]?.focus();
+      // Auto-submit if full
+      if (pasted.length === 6) {
+        handleVerify2FA(pasted);
+      }
+    }
+  };
+
+  const handleVerify2FA = async (codeOverride) => {
+    const code = codeOverride || (useBackupCode ? backupCode.trim() : otpDigits.join(""));
+    if (!code) {
+      setError("Please enter a verification code.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const response = await twoFactorApi.verifyLogin({ challenge_token: challengeToken, code });
+      const { access, refresh, user } = response.data;
+      setTokens(access, refresh);
+      setUser(user);
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      const detail = err.response?.data?.detail || "Invalid verification code.";
+      setError(typeof detail === "string" ? detail : "Verification failed.");
+      // Clear OTP digits on failure
+      if (!useBackupCode) {
+        setOtpDigits(["", "", "", "", "", ""]);
+        digitRefs.current[0]?.focus();
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBack = () => {
+    setTwoFactorStep(false);
+    setChallengeToken("");
+    setOtpDigits(["", "", "", "", "", ""]);
+    setBackupCode("");
+    setError("");
+    setUseBackupCode(false);
+  };
+
+  // ── 2FA Verification Step ─────────────────────────────────────────
+  if (twoFactorStep) {
+    return (
+      <div className="min-h-screen w-full bg-[#070b14] text-slate-100 flex items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden font-sans">
+        <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-indigo-600/15 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-sky-600/15 blur-[120px] pointer-events-none" />
+
+        <div className="w-full max-w-md bg-slate-900/70 border border-slate-800/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-indigo-950/40 p-8 sm:p-10 z-10 space-y-6">
+          {/* Header */}
+          <div className="text-center">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-sky-500 flex items-center justify-center shadow-lg shadow-indigo-600/30 mb-4">
+              <ShieldCheck className="w-7 h-7 text-white" />
+            </div>
+            <h1 className="text-2xl font-extrabold text-slate-100 tracking-tight">
+              Two-Factor Verification
+            </h1>
+            <p className="text-sm text-slate-400 mt-2">
+              Enter the 6-digit code from your authenticator app
+              {challengeEmail && (
+                <span className="block text-xs text-slate-500 mt-1">for {challengeEmail}</span>
+              )}
+            </p>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="flex items-start gap-3 p-4 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-2xl text-xs sm:text-sm animate-fade-in">
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <div className="flex-1">{error}</div>
+            </div>
+          )}
+
+          {!useBackupCode ? (
+            /* OTP Digit Boxes */
+            <div>
+              <div className="flex justify-center gap-2.5" onPaste={handleDigitPaste}>
+                {otpDigits.map((digit, i) => (
+                  <input
+                    key={i}
+                    ref={(el) => (digitRefs.current[i] = el)}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleDigitChange(i, e.target.value)}
+                    onKeyDown={(e) => handleDigitKeyDown(i, e)}
+                    className={`w-12 h-14 text-center text-xl font-bold bg-slate-950/80 border rounded-xl text-slate-100 focus:outline-none focus:ring-2 transition-all ${
+                      digit
+                        ? "border-indigo-500/60 focus:ring-indigo-500"
+                        : "border-slate-700/80 focus:ring-indigo-500"
+                    }`}
+                    autoComplete="one-time-code"
+                  />
+                ))}
+              </div>
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    setUseBackupCode(true);
+                  }}
+                  className="text-xs text-slate-400 hover:text-indigo-400 transition-colors flex items-center gap-1.5"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  Use a backup code instead
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Backup Code Input */
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Backup Recovery Code
+                </label>
+                <input
+                  type="text"
+                  value={backupCode}
+                  onChange={(e) => setBackupCode(e.target.value.toUpperCase())}
+                  placeholder="Enter 8-character backup code"
+                  autoFocus
+                  className="w-full py-3 px-4 bg-slate-950/80 border border-slate-700/80 rounded-xl text-sm text-slate-100 text-center tracking-[0.3em] font-mono placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => handleVerify2FA()}
+                disabled={loading || !backupCode.trim()}
+                className="w-full py-3 px-6 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  <>
+                    <ArrowRight className="w-4 h-4" />
+                    Verify Backup Code
+                  </>
+                )}
+              </button>
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    setUseBackupCode(false);
+                    setBackupCode("");
+                  }}
+                  className="text-xs text-slate-400 hover:text-indigo-400 transition-colors flex items-center gap-1.5"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Use authenticator code instead
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Back button */}
+          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={handleBack}
+              className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1.5 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to sign in
+            </button>
+            <span className="flex items-center gap-1 text-xs text-emerald-400">
+              <ShieldCheck className="w-3.5 h-3.5" /> Encrypted Session
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Normal Login Form ─────────────────────────────────────────────
   return (
     <div className="min-h-screen w-full bg-[#070b14] text-slate-100 flex items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden font-sans">
       {/* Ambient background glow effects */}

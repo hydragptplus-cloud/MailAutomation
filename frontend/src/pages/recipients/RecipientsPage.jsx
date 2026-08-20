@@ -208,12 +208,12 @@ export default function RecipientsPage() {
     {
       key: "company",
       header: "Company",
-      render: (val) => val || "—",
+      render: (val) => val || "-",
     },
     {
       key: "phone",
       header: "Phone",
-      render: (val) => val || "—",
+      render: (val) => val || "-",
     },
     {
       key: "website",
@@ -222,7 +222,7 @@ export default function RecipientsPage() {
         <a href={val.startsWith("http") ? val : `https://${val}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">
           {val.replace(/^https?:\/\//, "")}
         </a>
-      ) : "—",
+      ) : "-",
     },
     {
       key: "list",
@@ -234,7 +234,7 @@ export default function RecipientsPage() {
       header: "Tags",
       render: (val) => {
         const tags = Array.isArray(val) ? val : [];
-        if (!tags.length) return "—";
+        if (!tags.length) return "-";
         return (
           <div className="flex flex-wrap gap-1">
             {tags.map((t, idx) => (
@@ -257,7 +257,7 @@ export default function RecipientsPage() {
     {
       key: "created_at",
       header: "Created Date",
-      render: (val) => (val ? new Date(val).toLocaleDateString() : "—"),
+      render: (val) => (val ? new Date(val).toLocaleDateString() : "-"),
     },
     {
       key: "actions",
@@ -522,7 +522,7 @@ export default function RecipientsPage() {
             <div className="grid grid-cols-2 gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
               <div>
                 <p className="text-xs text-slate-400 font-medium">Name</p>
-                <p className="font-semibold">{viewModal.data.name || "—"}</p>
+                <p className="font-semibold">{viewModal.data.name || "-"}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-400 font-medium">Email</p>
@@ -530,11 +530,11 @@ export default function RecipientsPage() {
               </div>
               <div>
                 <p className="text-xs text-slate-400 font-medium">Company</p>
-                <p>{viewModal.data.company || "—"}</p>
+                <p>{viewModal.data.company || "-"}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-400 font-medium">Phone</p>
-                <p>{viewModal.data.phone || "—"}</p>
+                <p>{viewModal.data.phone || "-"}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-400 font-medium">Website</p>
@@ -543,7 +543,7 @@ export default function RecipientsPage() {
                     <a href={viewModal.data.website.startsWith("http") ? viewModal.data.website : `https://${viewModal.data.website}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">
                       {viewModal.data.website}
                     </a>
-                  ) : "—"}
+                  ) : "-"}
                 </p>
               </div>
               <div>

@@ -20,6 +20,11 @@ class User(AbstractUser):
         blank=True,
     )
 
+    # Two-Factor Authentication
+    two_factor_enabled = models.BooleanField(default=False)
+    two_factor_secret = models.CharField(max_length=64, blank=True, default="")
+    two_factor_backup_codes = models.JSONField(default=list, blank=True)
+
     def save(self, *args, **kwargs):
         if self.name and not self.first_name:
             self.first_name = self.name

@@ -10,6 +10,7 @@ const usersApi = {
   deactivateUser: (id) => apiClient.post(`/users/${id}/deactivate/`),
   reactivateUser: (id) => apiClient.post(`/users/${id}/reactivate/`),
   revokeSessions: (id) => apiClient.post(`/users/${id}/revoke-sessions/`),
+  resetUser2FA: (id) => apiClient.post(`/users/${id}/reset-2fa/`),
 };
 
 export default usersApi;

@@ -31,9 +31,16 @@ def _request_ip(request):
     return ip if ip != "unknown" else None
 
 
+def _user_requires_2fa(user) -> bool:
+    """Check if user must complete 2FA challenge on login (requires enabled flag and a valid secret)."""
+    return bool(user.two_factor_enabled and user.two_factor_secret)
+
+
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @transaction.atomic
     def validate(self, attrs):
+        from .two_factor import create_challenge_token
+
         username_or_email = attrs.get("username", "").strip()
         if "@" in username_or_email:
             user = User.objects.filter(email__iexact=username_or_email).first()
@@ -43,6 +50,18 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         request = self.context.get("request")
         self.user = User.objects.select_for_update().get(pk=self.user.pk)
         user = cast(User, self.user)
+
+        # ── 2FA challenge gate ────────────────────────────────────────
+        if _user_requires_2fa(user):
+            challenge = create_challenge_token(user)
+            return {
+                "two_factor_required": True,
+                "challenge_token": challenge,
+                "user_id": user.pk,
+                "email": user.email,
+            }
+
+        # ── Normal login (no 2FA) ─────────────────────────────────────
         if user.role == User.Role.OWNER:
             UserLoginSession.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
         session_id = uuid.uuid4()
@@ -101,21 +120,24 @@ class UserSerializer(serializers.ModelSerializer):
     can_delete = serializers.SerializerMethodField()
     can_deactivate = serializers.SerializerMethodField()
     can_reset_password = serializers.SerializerMethodField()
+    can_reset_2fa = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = (
             "id", "username", "name", "email", "role",
             "organization", "organization_name", "is_active",
-            "date_joined", "password",
+            "date_joined", "password", "two_factor_enabled",
             # computed
             "active_session_count", "last_seen_at",
             "can_delete", "can_deactivate", "can_reset_password",
+            "can_reset_2fa",
         )
         read_only_fields = (
-            "id", "date_joined", "organization_name",
+            "id", "date_joined", "organization_name", "two_factor_enabled",
             "active_session_count", "last_seen_at",
             "can_delete", "can_deactivate", "can_reset_password",
+            "can_reset_2fa",
         )
 
     # ── helpers ───────────────────────────────────────────────────────
@@ -183,6 +205,18 @@ class UserSerializer(serializers.ModelSerializer):
         if obj.role == User.Role.OWNER and actor.pk != obj.pk:
             return False
         return True
+
+    def get_can_reset_2fa(self, obj):
+        actor = self._actor()
+        if not actor:
+            return False
+        if obj.role == User.Role.OWNER:
+            return False  # Owner can only manage their own 2FA
+        if obj.pk == actor.pk:
+            return False  # Use profile settings for your own
+        if not obj.two_factor_enabled:
+            return False
+        return actor.role in {User.Role.OWNER, User.Role.ADMIN}
 
     # ── validation ────────────────────────────────────────────────────
 
@@ -267,11 +301,22 @@ class UserSerializer(serializers.ModelSerializer):
 
 class ProfileSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source="organization.name", read_only=True)
+    two_factor_backup_count = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ("id", "username", "name", "email", "role", "organization", "organization_name")
-        read_only_fields = ("id", "username", "role", "organization", "organization_name")
+        fields = (
+            "id", "username", "name", "email", "role",
+            "organization", "organization_name",
+            "two_factor_enabled", "two_factor_backup_count",
+        )
+        read_only_fields = (
+            "id", "username", "role", "organization", "organization_name",
+            "two_factor_enabled", "two_factor_backup_count",
+        )
+
+    def get_two_factor_backup_count(self, obj):
+        return len(obj.two_factor_backup_codes or [])
 
 
 class UserLoginSessionSerializer(serializers.ModelSerializer):

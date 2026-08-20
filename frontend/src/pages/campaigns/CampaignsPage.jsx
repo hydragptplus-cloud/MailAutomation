@@ -169,7 +169,7 @@ export default function CampaignsPage() {
     {
       key: "scheduled_at",
       header: "Scheduled Time",
-      render: (val) => (val ? new Date(val).toLocaleString() : "—"),
+      render: (val) => (val ? new Date(val).toLocaleString() : "-"),
     },
     {
       key: "actions",

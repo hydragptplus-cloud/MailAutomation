@@ -8,6 +8,9 @@ import {
   Power,
   Search,
   Shield,
+  ShieldCheck,
+  ShieldOff,
+  AlertTriangle,
   Trash2,
   UserCheck,
   UserX,
@@ -93,8 +96,11 @@ export default function PlatformUsers() {
     );
   }, [users, search]);
 
+  const [editingUser, setEditingUser] = useState(null);
+
   function openCreate() {
     setEditing(null);
+    setEditingUser(null);
     setForm(emptyForm);
     setUserModal(true);
     setError("");
@@ -102,6 +108,7 @@ export default function PlatformUsers() {
 
   function openEdit(user) {
     setEditing(user.id);
+    setEditingUser(user);
     setForm({
       name: user.name || "",
       email: user.email,
@@ -117,6 +124,7 @@ export default function PlatformUsers() {
   function closeUserModal() {
     setUserModal(false);
     setEditing(null);
+    setEditingUser(null);
     setForm(emptyForm);
   }
 
@@ -203,6 +211,27 @@ export default function PlatformUsers() {
       await load();
     } catch (e) {
       setError(e.response?.data?.detail || "Unable to revoke sessions.");
+    }
+  }
+
+  async function handleReset2FA(user) {
+    if (
+      !window.confirm(
+        `Are you sure you want to reset 2FA for ${user.name || user.username}? Their authenticator secret and backup codes will be cleared immediately.`
+      )
+    ) {
+      return;
+    }
+    setError("");
+    try {
+      await usersApi.resetUser2FA(user.id);
+      setMessage(`2FA has been reset for ${user.name || user.username}.`);
+      await load();
+      if (editing && editingUser?.id === user.id) {
+        setEditingUser((prev) => (prev ? { ...prev, two_factor_enabled: false } : prev));
+      }
+    } catch (e) {
+      setError(e.response?.data?.detail || "Unable to reset 2FA.");
     }
   }
 
@@ -298,6 +327,7 @@ export default function PlatformUsers() {
               <th>Email</th>
               <th>Role</th>
               <th>Organization</th>
+              <th>2FA</th>
               <th>Status</th>
               <th>Sessions</th>
               <th>Last seen</th>
@@ -316,7 +346,18 @@ export default function PlatformUsers() {
                 <td className="text-sm">{user.email}</td>
                 <td>{roleBadge(user.role)}</td>
                 <td className="text-sm text-slate-300">
-                  {user.organization_name || "—"}
+                  {user.organization_name || "-"}
+                </td>
+                <td>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                      user.two_factor_enabled
+                        ? "bg-emerald-400/10 text-emerald-300 border-emerald-500/30"
+                        : "bg-slate-500/10 text-slate-500 border-slate-600/30"
+                    }`}
+                  >
+                    {user.two_factor_enabled ? "Active" : "Off"}
+                  </span>
                 </td>
                 <td>
                   <StatusBadge active={user.is_active} />
@@ -327,7 +368,7 @@ export default function PlatformUsers() {
                 <td className="text-xs text-slate-500">
                   {user.last_seen_at
                     ? new Date(user.last_seen_at).toLocaleString()
-                    : "—"}
+                    : "-"}
                 </td>
                 <td>
                   <div className="flex justify-end gap-1">
@@ -348,6 +389,15 @@ export default function PlatformUsers() {
                         tone="warning"
                       >
                         <Key />
+                      </IconBtn>
+                    )}
+                    {user.can_reset_2fa && (
+                      <IconBtn
+                        title="Reset 2FA Authenticator"
+                        onClick={() => handleReset2FA(user)}
+                        tone="warning"
+                      >
+                        <ShieldOff />
                       </IconBtn>
                     )}
                     {user.is_active && user.can_deactivate && (
@@ -495,6 +545,33 @@ export default function PlatformUsers() {
               </Field>
             </div>
 
+            {/* 2FA Security in Edit User Modal */}
+            {editing && editingUser && (
+              <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Shield className={`w-4 h-4 ${editingUser.two_factor_enabled ? "text-emerald-400" : "text-slate-500"}`} />
+                  <div>
+                    <p className="text-xs font-semibold text-slate-200">Two-Factor Authentication (2FA)</p>
+                    <p className="text-[11px] text-slate-400">
+                      {editingUser.two_factor_enabled
+                        ? "Authenticator app is active for this account."
+                        : "2FA is not enabled for this user."}
+                    </p>
+                  </div>
+                </div>
+                {editingUser.can_reset_2fa && (
+                  <button
+                    type="button"
+                    onClick={() => handleReset2FA(editingUser)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-medium transition-colors"
+                  >
+                    <ShieldOff className="w-3.5 h-3.5" />
+                    Reset 2FA
+                  </button>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">
               <button
                 type="button"
@@ -518,7 +595,7 @@ export default function PlatformUsers() {
       {/* Reset Password Modal */}
       {passwordModal && (
         <Modal
-          title={`Reset password — ${passwordModal.name || passwordModal.username}`}
+          title={`Reset password - ${passwordModal.name || passwordModal.username}`}
           onClose={() => {
             setPasswordModal(null);
             setError("");

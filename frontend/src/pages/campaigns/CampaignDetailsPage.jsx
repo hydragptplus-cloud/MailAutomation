@@ -136,7 +136,7 @@ export default function CampaignDetailsPage() {
       header: "Server Response / Reason",
       render: (val) => (
         <span className="text-slate-300 text-xs font-mono truncate max-w-xs block" title={val}>
-          {val || "—"}
+          {val || "-"}
         </span>
       ),
     },
@@ -148,7 +148,7 @@ export default function CampaignDetailsPage() {
     {
       key: "sent_at",
       header: "Sent Time",
-      render: (val) => (val ? new Date(val).toLocaleString() : "—"),
+      render: (val) => (val ? new Date(val).toLocaleString() : "-"),
     },
   ];
 

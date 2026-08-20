@@ -401,7 +401,7 @@ export default function ImportRecipientsPage() {
                       <tr key={idx} className="hover:bg-slate-800/30">
                         {headers.map((h, i) => (
                           <td key={i} className="p-2.5 max-w-xs truncate" title={row[h]}>
-                            {row[h] || "—"}
+                            {row[h] || "-"}
                           </td>
                         ))}
                       </tr>

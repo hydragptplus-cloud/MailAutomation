@@ -574,7 +574,7 @@ export default function PlatformOrganizations() {
       {/* View Users Modal */}
       {viewUsersOrg && (
         <Modal
-          title={`Team & Admins — ${viewUsersOrg.name}`}
+          title={`Team & Admins - ${viewUsersOrg.name}`}
           onClose={() => {
             setViewUsersOrg(null);
             setPasswordTarget(null);
@@ -605,7 +605,7 @@ export default function PlatformOrganizations() {
               <form onSubmit={handleSetPassword} className="p-3 bg-slate-950/60 border border-amber-500/30 rounded-md space-y-3">
                 <div className="flex items-center gap-2 text-xs text-amber-300">
                   <Shield className="w-3.5 h-3.5" />
-                  Reset password for <strong>{passwordTarget.name || passwordTarget.username}</strong> — sessions will be revoked.
+                  Reset password for <strong>{passwordTarget.name || passwordTarget.username}</strong> - sessions will be revoked.
                 </div>
                 <div className="flex gap-2">
                   <input

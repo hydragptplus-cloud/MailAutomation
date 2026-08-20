@@ -209,7 +209,7 @@ export default function ReportsPage() {
         );
       },
     },
-    { key: "started_at", header: "Started Time", render: (val) => (val ? new Date(val).toLocaleDateString() : "—") },
+    { key: "started_at", header: "Started Time", render: (val) => (val ? new Date(val).toLocaleDateString() : "-") },
     {
       key: "actions",
       header: "Actions",
@@ -232,7 +232,7 @@ export default function ReportsPage() {
     { key: "smtp_name", header: "SMTP Server", render: (val) => val || "Default SMTP" },
     { key: "status", header: "Status", render: (val) => <StatusBadge status={val} /> },
     { key: "message", header: "Server Response", render: (val) => <span className="font-mono text-xs text-slate-400">{val || "250 2.0.0 OK"}</span> },
-    { key: "sent_at", header: "Sent Time", render: (val) => (val ? new Date(val).toLocaleString() : "—") },
+    { key: "sent_at", header: "Sent Time", render: (val) => (val ? new Date(val).toLocaleString() : "-") },
   ];
 
   return (

@@ -12,7 +12,7 @@ const emptyPlan = {
 
 const numberFields = [
   ["original_price_bdt", "Original Price (BDT)"],
-  ["discount_percent", "Discount percent (0–100%)"],
+  ["discount_percent", "Discount percent (0-100%)"],
   ["email_limit", "Emails per 30 days"],
   ["daily_email_limit", "Daily email limit"],
   ["weekly_email_limit", "Weekly email limit"],

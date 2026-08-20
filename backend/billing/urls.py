@@ -4,7 +4,7 @@ from .views import (
     AccountInvoiceCreateView, BscTransactionInspectView, CheckoutEmailStartView, CheckoutEmailVerifyView, FreeSignupView,
     CsrfBootstrapView, CurrentInvoiceView, InvoiceCancelView, InvoiceCreateView, InvoiceDetailView, InvoiceRecoverView, InvoiceReplaceView,
     InvoiceSessionExchangeView, InvoiceVerifyView,
-    PaymentReviewViewSet, PlanAdminViewSet, PlanListView,
+    PaymentReviewViewSet, PlanAdminViewSet, PlanListView, PublicLandingMonitorView,
 )
 
 plan_admin_list = PlanAdminViewSet.as_view({"get": "list", "post": "create"})
@@ -14,6 +14,7 @@ review_detail = PaymentReviewViewSet.as_view({"get": "retrieve"})
 review_action = PaymentReviewViewSet.as_view({"post": "action"})
 
 urlpatterns = [
+    path("monitor/", PublicLandingMonitorView.as_view(), name="public-landing-monitor"),
     path("plans/", PlanListView.as_view(), name="public-plans"),
     path("platform/plans/", plan_admin_list, name="platform-plan-list"),
     path("platform/plans/<int:pk>/", plan_admin_detail, name="platform-plan-detail"),

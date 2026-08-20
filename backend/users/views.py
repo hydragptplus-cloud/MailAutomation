@@ -1,19 +1,22 @@
 from typing import cast
 
+import uuid
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from common.models import SystemSetting
 from common.permissions import OwnerOrAdmin
 from common.tenancy import is_owner, scope_queryset
+from common.utils import get_client_ip
 from .models import User, UserLoginSession
 from .serializers import (
     CustomTokenObtainPairSerializer,
@@ -22,6 +25,16 @@ from .serializers import (
     SystemSettingSerializer,
     UserLoginSessionSerializer,
     UserSerializer,
+)
+from .two_factor import (
+    create_challenge_token,
+    generate_backup_codes,
+    generate_qr_code_base64,
+    generate_totp_secret,
+    get_totp_uri,
+    verify_and_consume_backup_code,
+    verify_challenge_token,
+    verify_totp,
 )
 
 
@@ -194,24 +207,56 @@ class UserViewSet(viewsets.ModelViewSet):
         ).update(revoked_at=timezone.now())
         return Response({"detail": f"{count} session(s) revoked."})
 
+    @action(detail=True, methods=["post"], url_path="reset-2fa")
+    def reset_2fa(self, request, pk=None):
+        """Admin/Owner resets another user's 2FA."""
+        target = cast(User, self.get_object())
+        actor = _request_user(request)
+        if target.role == User.Role.OWNER:
+            return Response(
+                {"detail": "Cannot reset 2FA for the owner account."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if target.pk == actor.pk:
+            return Response(
+                {"detail": "Use your profile settings to manage your own 2FA."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        target.two_factor_enabled = False
+        target.two_factor_secret = ""
+        target.two_factor_backup_codes = []
+        target.save(update_fields=["two_factor_enabled", "two_factor_secret", "two_factor_backup_codes"])
+        return Response({"detail": f"2FA has been reset for {target.email}."})
+
 
 class SettingsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def _setting(self, request):
-        organization = _request_user(request).organization
-        return SystemSetting.objects.get_or_create(organization=organization)[0] if organization else None
+        user = _request_user(request)
+        if user.organization:
+            return SystemSetting.objects.get_or_create(organization=user.organization)[0]
+        # For Owner / users without an explicit organization, use or create global system setting
+        setting = SystemSetting.objects.filter(organization__isnull=True).first()
+        if not setting:
+            setting = SystemSetting.objects.first()
+        if not setting:
+            setting = SystemSetting.objects.create(organization=None)
+        return setting
 
     def get(self, request):
         setting_obj = self._setting(request)
         if not setting_obj:
-            return Response({"detail": "Select an organization."}, status=400)
+            return Response({"detail": "System settings not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(SystemSettingSerializer(setting_obj).data)
 
     def patch(self, request):
         if _request_user(request).role not in {"owner", "admin"}:
-            return Response({"detail": "You do not have permission to change settings."}, status=403)
-        serializer = SystemSettingSerializer(self._setting(request), data=request.data, partial=True)
+            return Response({"detail": "You do not have permission to change settings."}, status=status.HTTP_403_FORBIDDEN)
+        setting_obj = self._setting(request)
+        if not setting_obj:
+            return Response({"detail": "System settings not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = SystemSettingSerializer(setting_obj, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
@@ -278,3 +323,173 @@ class SessionViewSet(viewsets.ReadOnlyModelViewSet):
         session.revoked_at = timezone.now()
         session.save(update_fields=["revoked_at"])
         return Response({"detail": "Session revoked."})
+
+
+# ── Two-Factor Authentication Views ──────────────────────────────────
+
+def _request_ip_raw(request):
+    ip = get_client_ip(request)
+    return ip if ip != "unknown" else None
+
+
+class TwoFactorSetupView(APIView):
+    """Generate a TOTP secret + QR code for the authenticated user."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = _request_user(request)
+        if user.two_factor_enabled:
+            return Response(
+                {"detail": "2FA is already enabled on your account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        secret = generate_totp_secret()
+        uri = get_totp_uri(user, secret)
+        qr_code = generate_qr_code_base64(uri)
+        return Response({
+            "secret": secret,
+            "otpauth_uri": uri,
+            "qr_code": qr_code,
+        })
+
+
+class TwoFactorConfirmView(APIView):
+    """Confirm TOTP setup by verifying a test code, then activate 2FA."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = _request_user(request)
+        secret = request.data.get("secret", "")
+        code = request.data.get("code", "")
+        if not secret or not code:
+            return Response(
+                {"detail": "Both secret and code are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not verify_totp(secret, code):
+            return Response(
+                {"detail": "Invalid verification code. Please try again."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Generate backup codes
+        plain_codes, hashed_codes = generate_backup_codes()
+        user.two_factor_secret = secret
+        user.two_factor_enabled = True
+        user.two_factor_backup_codes = hashed_codes
+        user.save(update_fields=["two_factor_secret", "two_factor_enabled", "two_factor_backup_codes"])
+        return Response({
+            "detail": "Two-factor authentication has been enabled.",
+            "backup_codes": plain_codes,
+        })
+
+
+class TwoFactorDisableView(APIView):
+    """Disable 2FA after verifying current password."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = _request_user(request)
+        password = request.data.get("password", "")
+        if not password:
+            return Response(
+                {"detail": "Current password is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not user.check_password(password):
+            return Response(
+                {"detail": "Incorrect password."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.two_factor_enabled = False
+        user.two_factor_secret = ""
+        user.two_factor_backup_codes = []
+        user.save(update_fields=["two_factor_enabled", "two_factor_secret", "two_factor_backup_codes"])
+        return Response({"detail": "Two-factor authentication has been disabled."})
+
+
+class TwoFactorBackupCodesView(APIView):
+    """Regenerate backup recovery codes."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = _request_user(request)
+        password = request.data.get("password", "")
+        if not password:
+            return Response(
+                {"detail": "Current password is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not user.check_password(password):
+            return Response(
+                {"detail": "Incorrect password."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not user.two_factor_enabled:
+            return Response(
+                {"detail": "2FA is not enabled on your account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        plain_codes, hashed_codes = generate_backup_codes()
+        user.two_factor_backup_codes = hashed_codes
+        user.save(update_fields=["two_factor_backup_codes"])
+        return Response({
+            "detail": "Backup codes have been regenerated.",
+            "backup_codes": plain_codes,
+        })
+
+
+class TwoFactorVerifyLoginView(APIView):
+    """Public endpoint to complete 2FA login with a TOTP or backup code."""
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
+
+    def post(self, request):
+        challenge_token = request.data.get("challenge_token", "")
+        code = request.data.get("code", "").strip()
+        if not challenge_token or not code:
+            return Response(
+                {"detail": "Challenge token and verification code are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = verify_challenge_token(challenge_token)
+        if not user:
+            return Response(
+                {"detail": "Challenge expired or invalid. Please sign in again."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Try TOTP first, then backup code
+        valid = False
+        if len(code) == 6 and code.isdigit():
+            valid = verify_totp(user.two_factor_secret, code)
+        if not valid:
+            valid = verify_and_consume_backup_code(user, code)
+        if not valid:
+            return Response(
+                {"detail": "Invalid verification code."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Issue full JWT tokens and create session
+        if user.role == User.Role.OWNER:
+            UserLoginSession.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
+        session_id = uuid.uuid4()
+        refresh = RefreshToken.for_user(user)
+        refresh["session_id"] = str(session_id)
+        refresh["role"] = user.role
+        refresh["organization_id"] = user.organization.id if user.organization else None
+        refresh["username"] = user.username
+        refresh["email"] = user.email
+        UserLoginSession.objects.create(
+            user=user,
+            session_id=session_id,
+            refresh_token_jti=str(refresh["jti"]),
+            ip_address=_request_ip_raw(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", "")[:1000],
+        )
+        return Response({
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": UserSerializer(user).data,
+        })

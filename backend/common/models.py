@@ -115,6 +115,7 @@ class BillingConfiguration(models.Model):
     payment_ton_wallet = models.CharField(max_length=128)
     encrypted_tron_api_key = models.TextField(blank=True)
     encrypted_toncenter_api_key = models.TextField(blank=True)
+    public_landing_monitor_active = models.BooleanField(default=True)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

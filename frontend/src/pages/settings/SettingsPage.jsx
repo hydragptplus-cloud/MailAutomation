@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Sliders,
   Mail,
-  HardDrive,
   Shield,
   Users,
   User,
@@ -15,9 +14,21 @@ import {
   UserX,
   UserCheck,
   LogOut,
+  ShieldCheck,
+  KeyRound,
+  QrCode,
+  Copy,
+  Download,
+  ShieldOff,
+  RefreshCcw,
+  Loader2,
+  X,
+  AlertTriangle,
+  Info,
 } from "lucide-react";
 import settingsApi from "../../services/settingsApi";
 import usersApi from "../../services/usersApi";
+import twoFactorApi from "../../services/twoFactorApi";
 import DataTable from "../../components/common/DataTable";
 import FormModal from "../../components/common/FormModal";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
@@ -92,6 +103,21 @@ export default function SettingsPage() {
     confirm_password: "",
   });
 
+  // 2FA State
+  const [twoFAStatus, setTwoFAStatus] = useState({ enabled: false, backupCount: 0 });
+  const [showSetup2FA, setShowSetup2FA] = useState(false);
+  const [setup2FAData, setSetup2FAData] = useState(null); // { secret, qr_code, otpauth_uri }
+  const [setup2FAStep, setSetup2FAStep] = useState(1); // 1=QR, 2=verify, 3=backup codes
+  const [setup2FACode, setSetup2FACode] = useState("");
+  const [setup2FABackupCodes, setSetup2FABackupCodes] = useState([]);
+  const [setup2FALoading, setSetup2FALoading] = useState(false);
+  const [showDisable2FA, setShowDisable2FA] = useState(false);
+  const [disable2FAPassword, setDisable2FAPassword] = useState("");
+  const [showRegenCodes, setShowRegenCodes] = useState(false);
+  const [regenPassword, setRegenPassword] = useState("");
+  const [regenCodes, setRegenCodes] = useState([]);
+  const [twoFALoading, setTwoFALoading] = useState(false);
+
   useEffect(() => {
     // Fetch system settings
     settingsApi
@@ -99,10 +125,25 @@ export default function SettingsPage() {
       .then((res) => {
         if (res.data) setSettings((prev) => ({ ...prev, ...res.data }));
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error("Failed to load settings from DB:", err);
+      });
 
     // Fetch users list
     loadUsers();
+
+    // Fetch profile (for 2FA status)
+    settingsApi
+      .getProfile()
+      .then((res) => {
+        if (res.data) {
+          setProfile((prev) => ({ ...prev, name: res.data.name || prev.name, email: res.data.email || prev.email }));
+          setTwoFAStatus({ enabled: res.data.two_factor_enabled || false, backupCount: res.data.two_factor_backup_count || 0 });
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load profile:", err);
+      });
   }, []);
 
   const loadUsers = () => {
@@ -115,7 +156,7 @@ export default function SettingsPage() {
         // Compute seat usage from user data
         const admins = data.filter((u) => u.role === "admin").length;
         const nonAdmins = data.filter((u) => !(["owner", "admin"].includes(u.role))).length;
-        // Get limits from account API or settings — use first user's org info as proxy
+        // Get limits from account API or settings - use first user's org info as proxy
         setSeatUsage((prev) => ({ ...prev, admins, users: nonAdmins }));
       })
       .catch(() => {
@@ -254,6 +295,113 @@ export default function SettingsPage() {
     }
   };
 
+  // ── 2FA Handlers ──────────────────────────────────────────────────
+
+  const handleStart2FASetup = async () => {
+    setSetup2FALoading(true);
+    try {
+      const res = await twoFactorApi.setup();
+      setSetup2FAData(res.data);
+      setSetup2FAStep(1);
+      setSetup2FACode("");
+      setSetup2FABackupCodes([]);
+      setShowSetup2FA(true);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to start 2FA setup.");
+    } finally {
+      setSetup2FALoading(false);
+    }
+  };
+
+  const handleConfirm2FA = async () => {
+    if (!setup2FACode || setup2FACode.length !== 6) {
+      toast.warning("Please enter the 6-digit code from your authenticator app.");
+      return;
+    }
+    setSetup2FALoading(true);
+    try {
+      const res = await twoFactorApi.confirm({ secret: setup2FAData.secret, code: setup2FACode });
+      setSetup2FABackupCodes(res.data.backup_codes || []);
+      setSetup2FAStep(3);
+      setTwoFAStatus({ enabled: true, backupCount: (res.data.backup_codes || []).length });
+      toast.success("Two-factor authentication enabled!");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Invalid code. Please try again.");
+    } finally {
+      setSetup2FALoading(false);
+    }
+  };
+
+  const handleDisable2FA = async () => {
+    if (!disable2FAPassword) {
+      toast.warning("Enter your current password to confirm.");
+      return;
+    }
+    setTwoFALoading(true);
+    try {
+      await twoFactorApi.disable({ password: disable2FAPassword });
+      setTwoFAStatus({ enabled: false, backupCount: 0 });
+      setShowDisable2FA(false);
+      setDisable2FAPassword("");
+      toast.success("Two-factor authentication disabled.");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to disable 2FA.");
+    } finally {
+      setTwoFALoading(false);
+    }
+  };
+
+  const handleRegenBackupCodes = async () => {
+    if (!regenPassword) {
+      toast.warning("Enter your current password to confirm.");
+      return;
+    }
+    setTwoFALoading(true);
+    try {
+      const res = await twoFactorApi.regenerateBackupCodes({ password: regenPassword });
+      setRegenCodes(res.data.backup_codes || []);
+      setTwoFAStatus((prev) => ({ ...prev, backupCount: (res.data.backup_codes || []).length }));
+      toast.success("Backup codes regenerated.");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to regenerate codes.");
+    } finally {
+      setTwoFALoading(false);
+    }
+  };
+
+  const handleResetUser2FA = async (user) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to reset 2FA for ${user.name || user.email}? Their authenticator secret and backup codes will be cleared, allowing them to sign in or re-enroll.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await usersApi.resetUser2FA(user.id);
+      toast.success(`2FA has been reset for ${user.name || user.email}.`);
+      loadUsers();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to reset 2FA.");
+    }
+  };
+
+  const copyBackupCodes = (codes) => {
+    navigator.clipboard.writeText(codes.join("\n"));
+    toast.success("Backup codes copied to clipboard.");
+  };
+
+  const downloadBackupCodes = (codes) => {
+    const text = `Mail Flow - Two-Factor Backup Recovery Codes\n${"-".repeat(48)}\n\n${codes.join("\n")}\n\nKeep these codes safe. Each code can only be used once.\nGenerated: ${new Date().toLocaleString()}`;
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "mailflow-backup-codes.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const userColumns = [
     { key: "name", header: "Name", render: (val) => <span className="font-semibold text-slate-100">{val}</span> },
     { key: "email", header: "Email", render: (val) => <span className="font-mono text-slate-300">{val}</span> },
@@ -280,6 +428,19 @@ export default function SettingsPage() {
       render: (val) => (
         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${val ? "bg-emerald-400/10 text-emerald-300 border border-emerald-500/30" : "bg-slate-500/10 text-slate-400 border border-slate-600/30"}`}>
           {val ? "Active" : "Inactive"}
+        </span>
+      ),
+    },
+    {
+      key: "two_factor_enabled",
+      header: "2FA",
+      render: (val) => (
+        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+          val
+            ? "bg-emerald-400/10 text-emerald-300 border border-emerald-500/30"
+            : "bg-slate-500/10 text-slate-500 border border-slate-600/30"
+        }`}>
+          {val ? "Active" : "Off"}
         </span>
       ),
     },
@@ -347,6 +508,15 @@ export default function SettingsPage() {
               <Trash className="w-4 h-4" />
             </button>
           )}
+          {row.can_reset_2fa && (
+            <button
+              onClick={() => handleResetUser2FA(row)}
+              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+              title="Reset 2FA"
+            >
+              <ShieldOff className="w-4 h-4" />
+            </button>
+          )}
         </div>
       ),
     },
@@ -367,7 +537,6 @@ export default function SettingsPage() {
         {[
           { id: "general", label: "General", icon: Sliders },
           { id: "email", label: "Email Defaults", icon: Mail },
-          { id: "storage", label: "Storage", icon: HardDrive },
           { id: "security", label: "Security", icon: Shield },
           { id: "users", label: "Users & Roles", icon: Users },
           { id: "profile", label: "My Profile", icon: User },
@@ -583,77 +752,7 @@ export default function SettingsPage() {
         </form>
       )}
 
-      {/* Tab 3: Storage Settings */}
-      {activeTab === "storage" && (
-        <form onSubmit={handleSaveSettings} className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-6 shadow-xl">
-          <h3 className="text-lg font-bold text-slate-100">Media & File Storage Limits</h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Maximum Upload Size (MB)</label>
-              <input
-                type="number"
-                value={settings.max_upload_size_mb}
-                onChange={(e) => setSettings({ ...settings, max_upload_size_mb: Number(e.target.value) })}
-                className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">File Retention Period (Days)</label>
-              <input
-                type="number"
-                value={settings.file_retention_days}
-                onChange={(e) => setSettings({ ...settings, file_retention_days: Number(e.target.value) })}
-                className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Allowed Image Formats</label>
-              <input
-                type="text"
-                value={settings.allowed_image_formats}
-                onChange={(e) => setSettings({ ...settings, allowed_image_formats: e.target.value })}
-                className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Allowed Attachment Formats</label>
-              <input
-                type="text"
-                value={settings.allowed_attachment_formats}
-                onChange={(e) => setSettings({ ...settings, allowed_attachment_formats: e.target.value })}
-                className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Media Storage System Path</label>
-            <input
-              type="text"
-              value={settings.media_storage_path}
-              onChange={(e) => setSettings({ ...settings, media_storage_path: e.target.value })}
-              className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100 font-mono"
-            />
-          </div>
-
-          <div className="flex justify-end pt-4 border-t border-slate-800">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/25"
-            >
-              <Save className="w-4 h-4" />
-              Save Storage Settings
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Tab 4: Security Settings */}
+      {/* Tab 3: Security Settings */}
       {activeTab === "security" && (
         <form onSubmit={handleSaveSettings} className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-6 shadow-xl">
           <h3 className="text-lg font-bold text-slate-100">Security & Authentication Policy</h3>
@@ -688,20 +787,45 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between">
+          {/* Organization-wide 2FA Enforcement Policy */}
+          <div className="p-5 bg-slate-950/80 border border-slate-800 rounded-2xl flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-slate-100">Two-Factor Authentication (2FA)</p>
-              <p className="text-xs text-slate-400">Require TOTP authenticator app verification upon sign in.</p>
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck className={`w-5 h-5 ${settings.two_factor_enabled ? "text-indigo-400" : "text-slate-500"}`} />
+                <p className="text-sm font-bold text-slate-100">Enforce Organization 2FA Policy</p>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Require TOTP authenticator app verification for all members upon sign in. When disabled, 2FA is optional per user.
+              </p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings.two_factor_enabled}
-                onChange={(e) => setSettings({ ...settings, two_factor_enabled: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-            </label>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                settings.two_factor_enabled
+                  ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-sm shadow-indigo-500/15"
+                  : "bg-slate-900 text-slate-500 border-slate-800"
+              }`}>
+                {settings.two_factor_enabled ? "Enforced" : "Disabled"}
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.two_factor_enabled}
+                onClick={() => setSettings({ ...settings, two_factor_enabled: !settings.two_factor_enabled })}
+                className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 transition-all duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-950 ${
+                  settings.two_factor_enabled
+                    ? "bg-gradient-to-r from-indigo-600 to-indigo-500 border-indigo-400 shadow-lg shadow-indigo-600/40"
+                    : "bg-slate-800 border-slate-700 hover:border-slate-600"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out mt-0.5 ${
+                    settings.two_factor_enabled ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
           <div className="flex justify-end pt-4 border-t border-slate-800">
@@ -742,7 +866,7 @@ export default function SettingsPage() {
             <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl">
               <p className="text-xs uppercase text-slate-400">Admin seats</p>
               <p className="text-xl font-bold mt-1">
-                {seatUsage.admins} <span className="text-sm text-slate-500">/ {seatUsage.maxAdmins || "—"}</span>
+                {seatUsage.admins} <span className="text-sm text-slate-500">/ {seatUsage.maxAdmins || "-"}</span>
               </p>
               {seatUsage.maxAdmins > 0 && (
                 <p className="text-xs text-indigo-400 mt-1">
@@ -753,7 +877,7 @@ export default function SettingsPage() {
             <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl">
               <p className="text-xs uppercase text-slate-400">User seats</p>
               <p className="text-xl font-bold mt-1">
-                {seatUsage.users} <span className="text-sm text-slate-500">/ {seatUsage.maxUsers || "—"}</span>
+                {seatUsage.users} <span className="text-sm text-slate-500">/ {seatUsage.maxUsers || "-"}</span>
               </p>
               {seatUsage.maxUsers > 0 && (
                 <p className="text-xs text-indigo-400 mt-1">
@@ -854,7 +978,7 @@ export default function SettingsPage() {
           <FormModal
             isOpen={passwordResetModal.isOpen}
             onClose={() => { passwordResetModal.closeModal(); setResetPassword(""); }}
-            title={`Reset password — ${passwordResetModal.data?.name || passwordResetModal.data?.email || ""}`}
+            title={`Reset password: ${passwordResetModal.data?.name || passwordResetModal.data?.email || ""}`}
           >
             <form onSubmit={handleResetPassword} className="space-y-4">
               <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm text-amber-300 flex items-center gap-2">
@@ -896,73 +1020,322 @@ export default function SettingsPage() {
 
       {/* Tab 6: Profile Settings */}
       {activeTab === "profile" && (
-        <form onSubmit={handleSaveProfile} className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-6 shadow-xl">
-          <h3 className="text-lg font-bold text-slate-100">User Account Profile</h3>
+        <div className="space-y-6">
+          {/* Profile Form */}
+          <form onSubmit={handleSaveProfile} className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-6 shadow-xl">
+            <h3 className="text-lg font-bold text-slate-100">User Account Profile</h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Your Name</label>
-              <input
-                type="text"
-                value={profile.name}
-                onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Your Name</label>
+                <input
+                  type="text"
+                  value={profile.name}
+                  onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Your Email</label>
+                <input
+                  type="email"
+                  value={profile.email}
+                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-2 border-t border-slate-800">
+              <h4 className="text-sm font-bold text-slate-200">Change Password</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Current Password</label>
+                  <input
+                    type="password"
+                    value={profile.current_password}
+                    onChange={(e) => setProfile({ ...profile, current_password: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">New Password</label>
+                  <input
+                    type="password"
+                    value={profile.new_password}
+                    onChange={(e) => setProfile({ ...profile, new_password: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Confirm New Password</label>
+                  <input
+                    type="password"
+                    value={profile.confirm_password}
+                    onChange={(e) => setProfile({ ...profile, confirm_password: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-slate-800">
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/25"
+              >
+                <Save className="w-4 h-4" />
+                Update Profile
+              </button>
+            </div>
+          </form>
+
+          {/* Two-Factor Authentication Card */}
+          <div className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${twoFAStatus.enabled ? "bg-emerald-500/10" : "bg-slate-800"}`}>
+                  <ShieldCheck className={`w-5 h-5 ${twoFAStatus.enabled ? "text-emerald-400" : "text-slate-500"}`} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-100">Two-Factor Authentication</h4>
+                  <p className="text-xs text-slate-400">
+                    {twoFAStatus.enabled
+                      ? `Active (${twoFAStatus.backupCount} backup codes remaining)`
+                      : "Add an extra layer of security to your account"}
+                  </p>
+                </div>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                twoFAStatus.enabled
+                  ? "bg-emerald-400/10 text-emerald-300 border-emerald-500/30"
+                  : "bg-slate-700/30 text-slate-400 border-slate-600/30"
+              }`}>
+                {twoFAStatus.enabled ? "Enabled" : "Disabled"}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-800">
+              {!twoFAStatus.enabled ? (
+                <button
+                  onClick={handleStart2FASetup}
+                  disabled={setup2FALoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/25 transition-all disabled:opacity-60"
+                >
+                  {setup2FALoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                  Enable 2FA
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { setShowRegenCodes(true); setRegenPassword(""); setRegenCodes([]); }}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition-all"
+                  >
+                    <RefreshCcw className="w-3.5 h-3.5" />
+                    Regenerate Backup Codes
+                  </button>
+                  <button
+                    onClick={() => { setShowDisable2FA(true); setDisable2FAPassword(""); }}
+                    className="flex items-center gap-2 px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-semibold transition-all"
+                  >
+                    <ShieldOff className="w-3.5 h-3.5" />
+                    Disable 2FA
+                  </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+      {/* 2FA Setup Modal (Accessible from any tab) */}
+      {showSetup2FA && setup2FAData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5 relative">
+            <button onClick={() => setShowSetup2FA(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
+            <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-indigo-400" />
+              {setup2FAStep === 1 ? "Scan QR Code" : setup2FAStep === 2 ? "Verify Code" : "Save Backup Codes"}
+            </h3>
+
+            {setup2FAStep === 1 && (
+              <div className="space-y-4">
+                <p className="text-xs text-slate-400">Scan this QR code with your authenticator app (Google Authenticator, 1Password, Authy, etc.).</p>
+                <div className="flex justify-center">
+                  <img src={setup2FAData.qr_code} alt="2FA QR Code" className="rounded-xl border border-slate-700" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Manual Entry Key</label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 font-mono break-all">{setup2FAData.secret}</code>
+                    <button onClick={() => { navigator.clipboard.writeText(setup2FAData.secret); toast.success("Secret copied!"); }} className="p-2 text-slate-400 hover:text-indigo-400 bg-slate-800 rounded-lg"><Copy className="w-4 h-4" /></button>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSetup2FAStep(2)}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all"
+                >
+                  I&apos;ve scanned the code &rarr; Next
+                </button>
+              </div>
+            )}
+
+            {setup2FAStep === 2 && (
+              <div className="space-y-4">
+                <p className="text-xs text-slate-400">Enter the 6-digit code shown in your authenticator app to verify setup.</p>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Verification Code</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={setup2FACode}
+                    onChange={(e) => setSetup2FACode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="000000"
+                    autoFocus
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-xl tracking-[0.4em] font-mono text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setSetup2FAStep(1)} className="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl text-sm font-medium">Back</button>
+                  <button
+                    onClick={handleConfirm2FA}
+                    disabled={setup2FALoading || setup2FACode.length !== 6}
+                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    {setup2FALoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    Verify & Activate
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {setup2FAStep === 3 && (
+              <div className="space-y-4">
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>Save these backup codes in a secure location. Each code can only be used once. You won&apos;t be able to see them again.</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {setup2FABackupCodes.map((code, i) => (
+                        <div key={i} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-center font-mono text-sm text-slate-200 tracking-widest">
+                          {code}
+                        </div>
+                  ))}
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => copyBackupCodes(setup2FABackupCodes)} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold"><Copy className="w-3.5 h-3.5" />Copy All</button>
+                  <button onClick={() => downloadBackupCodes(setup2FABackupCodes)} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold"><Download className="w-3.5 h-3.5" />Download</button>
+                </div>
+                <button
+                  onClick={() => setShowSetup2FA(false)}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all"
+                >
+                  I&apos;ve saved my codes &rarr; Done
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Disable 2FA Modal (Accessible from any tab) */}
+      {showDisable2FA && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 relative">
+            <button onClick={() => setShowDisable2FA(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
+            <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2"><ShieldOff className="w-5 h-5 text-rose-400" />Disable Two-Factor Authentication</h3>
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>This will remove the extra security layer from your account. You can re-enable it at any time.</span>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Your Email</label>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Confirm Password</label>
               <input
-                type="email"
-                value={profile.email}
-                onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
+                type="password"
+                value={disable2FAPassword}
+                onChange={(e) => setDisable2FAPassword(e.target.value)}
+                autoFocus
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               />
             </div>
-          </div>
-
-          <div className="space-y-4 pt-2 border-t border-slate-800">
-            <h4 className="text-sm font-bold text-slate-200">Change Password</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Current Password</label>
-                <input
-                  type="password"
-                  value={profile.current_password}
-                  onChange={(e) => setProfile({ ...profile, current_password: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">New Password</label>
-                <input
-                  type="password"
-                  value={profile.new_password}
-                  onChange={(e) => setProfile({ ...profile, new_password: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Confirm New Password</label>
-                <input
-                  type="password"
-                  value={profile.confirm_password}
-                  onChange={(e) => setProfile({ ...profile, confirm_password: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
-                />
-              </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setShowDisable2FA(false)} className="flex-1 py-2 bg-slate-800 text-slate-300 rounded-xl text-sm font-medium">Cancel</button>
+              <button
+                onClick={handleDisable2FA}
+                disabled={twoFALoading || !disable2FAPassword}
+                className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {twoFALoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldOff className="w-4 h-4" />}
+                Disable 2FA
+              </button>
             </div>
           </div>
+        </div>
+      )}
 
-          <div className="flex justify-end pt-4 border-t border-slate-800">
-            <button
-              type="submit"
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/25"
-            >
-              <Save className="w-4 h-4" />
-              Update Profile
-            </button>
+      {/* Regenerate Backup Codes Modal (Accessible from any tab) */}
+      {showRegenCodes && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 relative">
+            <button onClick={() => setShowRegenCodes(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
+            <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2"><RefreshCcw className="w-5 h-5 text-indigo-400" />Regenerate Backup Codes</h3>
+
+            {regenCodes.length === 0 ? (
+              <div className="space-y-4">
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>This will invalidate all existing backup codes and generate new ones.</span>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={regenPassword}
+                    onChange={(e) => setRegenPassword(e.target.value)}
+                    autoFocus
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setShowRegenCodes(false)} className="flex-1 py-2 bg-slate-800 text-slate-300 rounded-xl text-sm font-medium">Cancel</button>
+                  <button
+                    onClick={handleRegenBackupCodes}
+                    disabled={twoFALoading || !regenPassword}
+                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    {twoFALoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+                    Generate New Codes
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>Save these new backup codes. Previous codes are now invalid.</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {regenCodes.map((code, i) => (
+                    <div key={i} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-center font-mono text-sm text-slate-200 tracking-widest">
+                      {code}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => copyBackupCodes(regenCodes)} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold"><Copy className="w-3.5 h-3.5" />Copy All</button>
+                  <button onClick={() => downloadBackupCodes(regenCodes)} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold"><Download className="w-3.5 h-3.5" />Download</button>
+                </div>
+                <button
+                  onClick={() => setShowRegenCodes(false)}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold"
+                >
+                  Done
+                </button>
+              </div>
+            )}
           </div>
-        </form>
+        </div>
       )}
     </div>
   );

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, CircleDollarSign, KeyRound, Loader2, Search, Save, Wallet } from "lucide-react";
+import { CheckCircle2, CircleDollarSign, KeyRound, Loader2, Radio, Search, Save, Wallet } from "lucide-react";
 import api from "../../services/api";
 
 const emptyBilling = {
   usdt_bdt_rate: "", payment_evm_wallet: "", payment_tron_wallet: "", payment_ton_wallet: "",
   tron_api_key: "", toncenter_api_key: "", clear_tron_api_key: false, clear_toncenter_api_key: false,
   tron_api_key_configured: false, toncenter_api_key_configured: false,
+  public_landing_monitor_active: true,
 };
 
 export default function PlatformBilling() {
@@ -37,6 +38,7 @@ export default function PlatformBilling() {
       payment_evm_wallet: billing.payment_evm_wallet,
       payment_tron_wallet: billing.payment_tron_wallet,
       payment_ton_wallet: billing.payment_ton_wallet,
+      public_landing_monitor_active: Boolean(billing.public_landing_monitor_active),
       clear_tron_api_key: billing.clear_tron_api_key,
       clear_toncenter_api_key: billing.clear_toncenter_api_key,
     };
@@ -73,7 +75,26 @@ export default function PlatformBilling() {
 
     <Section icon={Search} title="BSC transaction check" description="Diagnostic only. It checks whether a confirmed BSC USDT transfer reached the configured EVM wallet."><div className="space-y-4"><div className="flex flex-col sm:flex-row gap-2"><input type="text" value={bscHash} onChange={(event) => setBscHash(event.target.value)} placeholder="BSC transaction hash or BscScan link" className="min-w-0 flex-1" /><button type="button" disabled={checking || !bscHash.trim()} onClick={inspectBscTransaction} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-slate-700 text-sm font-semibold disabled:opacity-50">{checking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}{checking ? "Checking..." : "Check hash"}</button></div>{bscResult && <BscResult result={bscResult} />}</div></Section>
 
-    <Section icon={KeyRound} title="Provider credentials" description="Keys are encrypted at rest. Stored values are never returned to the browser."><div className="grid md:grid-cols-2 gap-6"><SecretField label="TronGrid API key" configured={billing.tron_api_key_configured} value={billing.tron_api_key} clear={billing.clear_tron_api_key} onValue={(value) => setBilling({ ...billing, tron_api_key: value, clear_tron_api_key: false })} onClear={(value) => setBilling({ ...billing, clear_tron_api_key: value, tron_api_key: value ? "" : billing.tron_api_key })} /><SecretField label="TON Center API key" configured={billing.toncenter_api_key_configured} value={billing.toncenter_api_key} clear={billing.clear_toncenter_api_key} onValue={(value) => setBilling({ ...billing, toncenter_api_key: value, clear_toncenter_api_key: false })} onClear={(value) => setBilling({ ...billing, clear_toncenter_api_key: value, toncenter_api_key: value ? "" : billing.toncenter_api_key })} /></div></Section>
+    <Section icon={Radio} title="Landing page monitor" description="Controls whether live platform telemetry (delivered, success rate, in-queue, and 12-day charts) is displayed on the public landing page.">
+      <label className="inline-flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-800 bg-slate-950/60 hover:border-slate-700 transition">
+        <input
+          type="checkbox"
+          className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-700 bg-slate-900"
+          checked={billing.public_landing_monitor_active}
+          onChange={(event) => setBilling({ ...billing, public_landing_monitor_active: event.target.checked })}
+        />
+        <div>
+          <strong className="block text-sm text-slate-200">
+            {billing.public_landing_monitor_active ? "Broadcast live telemetry" : "Monitor is paused (Inactive)"}
+          </strong>
+          <span className="text-xs text-slate-500">
+            {billing.public_landing_monitor_active
+              ? "Public landing page will display real 30-day stats, 12-day daily bars, and SMTP relay health."
+              : "Public landing page will show 'Mail Flow is inactive - data not available'."}
+          </span>
+        </div>
+      </label>
+    </Section>
 
     {(billing.updated_at || billing.updated_by_email) && <p className="text-xs text-slate-600">Last updated {billing.updated_at ? new Date(billing.updated_at).toLocaleString() : ""}{billing.updated_by_email ? ` by ${billing.updated_by_email}` : ""}</p>}
   </form>;
