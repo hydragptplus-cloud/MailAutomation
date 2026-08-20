@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -34,6 +34,9 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileError, setTurnstileError] = useState(false);
+  const turnstileRef = useRef(null);
 
   useEffect(() => {
     getPlans()
@@ -45,6 +48,37 @@ export default function Register() {
         // Fallback gracefully if plans endpoint has delay
       })
       .finally(() => setLoadingPlan(false));
+  }, []);
+
+  useEffect(() => {
+    const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+    if (!siteKey || !turnstileRef.current) {
+      if (!siteKey) setTurnstileError(true);
+      return undefined;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    script.async = true;
+    script.onload = () => {
+      if (window.turnstile && turnstileRef.current) {
+        window.turnstile.render(turnstileRef.current, {
+          sitekey: siteKey,
+          action: "checkout",
+          callback: (token) => {
+            setTurnstileToken(token);
+            setTurnstileError(false);
+          },
+          "expired-callback": () => setTurnstileToken(""),
+          "error-callback": () => {
+            setTurnstileToken("");
+            setTurnstileError(true);
+          },
+        });
+      }
+    };
+    document.body.appendChild(script);
+    return () => script.remove();
   }, []);
 
   const handleChange = (e) => {
@@ -60,11 +94,21 @@ export default function Register() {
     setSubmitting(true);
 
     try {
+      if (!turnstileToken) {
+        setError(
+          turnstileError
+            ? "Checkout verification could not load. Disable content blockers, allow challenges.cloudflare.com, or try another network and refresh the page."
+            : "Complete the checkout verification before continuing."
+        );
+        return;
+      }
+
       const payload = {
         name: form.name.trim(),
         email: form.email.trim(),
         organization_name: form.organization_name.trim(),
         password: form.password,
+        turnstile_token: turnstileToken,
         ...(freePlan?.slug ? { plan_slug: freePlan.slug } : {}),
       };
 
@@ -226,6 +270,15 @@ export default function Register() {
                 <p className="text-[11px] text-slate-500 mt-1">
                   Must contain at least 8 characters.
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <div ref={turnstileRef} />
+                {turnstileError && (
+                  <p className="text-xs text-amber-300">
+                    Checkout verification is unavailable. Refresh after allowing Cloudflare challenges.
+                  </p>
+                )}
               </div>
 
               <button
