@@ -79,12 +79,11 @@ def send_checkout_otp_email(email, code):
 
 def _invoice_link(invoice):
     from .models import InvoiceAccessCode
-    from .services import decrypt_invoice_access_code, invoice_resume_url, issue_invoice_access_code, revoke_invoice_access
+    from .services import decrypt_invoice_access_code, invoice_resume_url, issue_invoice_access_code
 
     if invoice.status not in (PaymentInvoice.Status.PENDING, PaymentInvoice.Status.VERIFYING, PaymentInvoice.Status.EXPIRED):
         return invoice_resume_url(invoice)
-    revoke_invoice_access(invoice)
-    token = issue_invoice_access_code(invoice)
+    token = issue_invoice_access_code(invoice, revoke_existing=False)
     access_code = InvoiceAccessCode.objects.filter(invoice=invoice).order_by("-created_at").first()
     token = decrypt_invoice_access_code(access_code) or token
     return invoice_resume_url(invoice, token)

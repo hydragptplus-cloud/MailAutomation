@@ -341,6 +341,8 @@ class InvoiceSessionExchangeView(CsrfProtectedAPIView):
             invoice, session_token = exchange_invoice_code(invoice_id, code, request=request)
         except PaymentInvoice.DoesNotExist:
             return Response({"detail": "Invoice not found."}, status=404)
+        except DRFValidationError as exc:
+            return Response(exc.detail, status=401)
         response = _invoice_response(_expire_if_needed(invoice))
         return _set_checkout_cookie(response, session_token)
 
