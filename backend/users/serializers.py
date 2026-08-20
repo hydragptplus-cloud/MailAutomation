@@ -3,6 +3,7 @@ from typing import Any, cast
 
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
+from django.db.models import Max, Q
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
@@ -22,9 +23,12 @@ def _seat_count(organization, role, exclude_user=None):
     return users.exclude(role__in=(User.Role.OWNER, User.Role.ADMIN)).count(), organization.max_users, "User"
 
 
+from common.utils import get_client_ip
+
+
 def _request_ip(request):
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "") if request else ""
-    return forwarded.split(",")[0].strip() if forwarded else (request.META.get("REMOTE_ADDR") if request else None)
+    ip = get_client_ip(request)
+    return ip if ip != "unknown" else None
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -64,42 +68,165 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 class SessionTokenRefreshSerializer(TokenRefreshSerializer):
     def validate(self, attrs):
         refresh = RefreshToken(cast(Any, attrs["refresh"]))
-        if not refresh.get("session_id") or not UserLoginSession.objects.filter(
-            session_id=refresh.get("session_id"), user_id=refresh.get("user_id"), revoked_at__isnull=True
+        session_id = refresh.get("session_id")
+        user_id = refresh.get("user_id")
+        if not session_id or not UserLoginSession.objects.filter(
+            session_id=session_id, user_id=user_id, revoked_at__isnull=True
         ).exists():
             raise InvalidToken("Session is no longer valid.")
-        return super().validate(attrs)
+        data = super().validate(attrs)
+        if "refresh" in data:
+            new_refresh = RefreshToken(cast(Any, data["refresh"]))
+            new_refresh["session_id"] = session_id
+            new_refresh["role"] = refresh.get("role")
+            new_refresh["organization_id"] = refresh.get("organization_id")
+            new_refresh["username"] = refresh.get("username")
+            new_refresh["email"] = refresh.get("email")
+            UserLoginSession.objects.filter(
+                session_id=session_id, user_id=user_id, revoked_at__isnull=True
+            ).update(refresh_token_jti=str(new_refresh["jti"]))
+            data["refresh"] = str(new_refresh)
+            data["access"] = str(new_refresh.access_token)
+        return data
 
 
 class UserSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True, required=False, allow_blank=False)
     organization_name = serializers.CharField(source="organization.name", read_only=True)
 
+    # Computed UI-helper fields
+    active_session_count = serializers.SerializerMethodField()
+    last_seen_at = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
+    can_deactivate = serializers.SerializerMethodField()
+    can_reset_password = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ("id", "username", "name", "email", "role", "organization", "organization_name", "is_active", "date_joined", "password")
-        read_only_fields = ("id", "date_joined", "organization_name")
+        fields = (
+            "id", "username", "name", "email", "role",
+            "organization", "organization_name", "is_active",
+            "date_joined", "password",
+            # computed
+            "active_session_count", "last_seen_at",
+            "can_delete", "can_deactivate", "can_reset_password",
+        )
+        read_only_fields = (
+            "id", "date_joined", "organization_name",
+            "active_session_count", "last_seen_at",
+            "can_delete", "can_deactivate", "can_reset_password",
+        )
+
+    # ── helpers ───────────────────────────────────────────────────────
+
+    def _actor(self):
+        request = self.context.get("request")
+        if request and getattr(request.user, "is_authenticated", False):
+            return cast(User, request.user)
+        return None
+
+    def _is_last_active_admin(self, user):
+        if user.role != User.Role.ADMIN or not user.organization:
+            return False
+        return not (
+            User.objects.filter(
+                organization=user.organization,
+                role=User.Role.ADMIN,
+                is_active=True,
+            )
+            .exclude(pk=user.pk)
+            .exists()
+        )
+
+    # ── computed fields ───────────────────────────────────────────────
+
+    def get_active_session_count(self, obj):
+        return UserLoginSession.objects.filter(user=obj, revoked_at__isnull=True).count()
+
+    def get_last_seen_at(self, obj):
+        result = UserLoginSession.objects.filter(user=obj, revoked_at__isnull=True).aggregate(
+            last=Max("last_seen_at")
+        )
+        return result["last"]
+
+    def get_can_delete(self, obj):
+        actor = self._actor()
+        if not actor:
+            return False
+        if obj.role == User.Role.OWNER:
+            return False
+        if obj.pk == actor.pk:
+            return False
+        if self._is_last_active_admin(obj):
+            return False
+        return True
+
+    def get_can_deactivate(self, obj):
+        actor = self._actor()
+        if not actor:
+            return False
+        if obj.role == User.Role.OWNER:
+            return False
+        if obj.pk == actor.pk:
+            return False
+        if not obj.is_active:
+            return False
+        if self._is_last_active_admin(obj):
+            return False
+        return True
+
+    def get_can_reset_password(self, obj):
+        actor = self._actor()
+        if not actor:
+            return False
+        if obj.role == User.Role.OWNER and actor.pk != obj.pk:
+            return False
+        return True
+
+    # ── validation ────────────────────────────────────────────────────
 
     def validate(self, attrs):
         request = self.context.get("request")
         actor = cast(User, request.user) if request and getattr(request.user, "is_authenticated", False) else None
         role = attrs.get("role", getattr(self.instance, "role", User.Role.OPERATOR))
         organization = attrs.get("organization", getattr(self.instance, "organization", None))
+
+        # Nobody can create/assign the owner role through the product API
+        if role == User.Role.OWNER:
+            raise serializers.ValidationError({"role": "Cannot assign the owner role through the product API."})
+
         if actor and actor.role != User.Role.OWNER:
-            if role == User.Role.OWNER:
-                raise serializers.ValidationError({"role": "Only the owner can assign this role."})
             if organization and organization != actor.organization:
                 raise serializers.ValidationError({"organization": "Users must belong to your organization."})
             attrs["organization"] = actor.organization
             organization = actor.organization
-        if actor and actor.role == User.Role.OWNER and role != User.Role.OWNER and not organization:
+
+        if actor and actor.role == User.Role.OWNER and not organization:
             raise serializers.ValidationError({"organization": "Customer users require an organization."})
+
+        # Self-demotion check
+        if self.instance and actor and self.instance.pk == actor.pk and role != self.instance.role:
+            raise serializers.ValidationError({"role": "You cannot change your own role."})
+
+        # Last active admin demotion check
+        if (
+            self.instance
+            and self.instance.role == User.Role.ADMIN
+            and role != User.Role.ADMIN
+            and self._is_last_active_admin(self.instance)
+        ):
+            raise serializers.ValidationError({"role": "Cannot demote the last active administrator."})
+
+        # Seat limit check
         if organization and role != User.Role.OWNER and (self.instance is None or role != self.instance.role):
             count, limit, label = _seat_count(organization, role, self.instance)
             if count >= limit:
                 raise serializers.ValidationError({"detail": f"{label} limit reached for this account."})
+
         if attrs.get("password"):
             validate_password(attrs["password"])
+
         return attrs
 
     @transaction.atomic

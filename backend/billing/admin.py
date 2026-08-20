@@ -6,11 +6,12 @@ from .models import CheckoutSession, FreePlanClaim, InvoiceAccessCode, PaymentIn
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
     list_display = (
-        "name", "slug", "price_bdt", "email_limit", "daily_email_limit",
+        "name", "slug", "original_price_bdt", "discount_percent", "price_bdt", "email_limit", "daily_email_limit",
         "weekly_email_limit", "max_admins", "max_users", "max_smtp_accounts",
         "max_recipients", "max_campaigns_per_day", "is_free", "is_active", "display_order",
     )
-    list_editable = ("price_bdt", "is_active", "display_order")
+    list_editable = ("is_active", "display_order")
+    readonly_fields = ("price_bdt",)
     list_filter = ("is_free", "is_active")
     search_fields = ("name", "slug")
     ordering = ("display_order", "price_bdt")

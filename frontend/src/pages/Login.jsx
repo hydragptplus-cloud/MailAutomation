@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
   Mail,
@@ -22,6 +22,9 @@ const apiBase = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const accountCreated = searchParams.get("created") === "1" || searchParams.get("registered") === "1";
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -72,10 +75,10 @@ export default function Login() {
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-sky-600/15 blur-[120px] pointer-events-none" />
 
       <div className="w-full max-w-5xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-indigo-950/40 grid grid-cols-1 lg:grid-cols-12 overflow-hidden z-10">
-        
+
         {/* Left Side: Login Form */}
         <div className="lg:col-span-7 p-6 sm:p-10 lg:p-12 flex flex-col justify-between space-y-8">
-          
+
           {/* Header & Logo */}
           <div>
             <div className="flex items-center gap-3 mb-6">
@@ -84,7 +87,7 @@ export default function Login() {
               </div>
               <div>
                 <span className="text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
-              Mail Flow <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">v2.0</span>
+                  Mail Flow <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">v2.0</span>
                 </span>
                 <p className="text-xs text-slate-400">Enterprise Campaign Dispatch Engine</p>
               </div>
@@ -97,6 +100,16 @@ export default function Login() {
               Enter your authentication credentials to access the campaign dashboard.
             </p>
           </div>
+
+          {/* Account Created Success Message */}
+          {accountCreated && !error && (
+            <div className="flex items-start gap-3 p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-2xl text-xs sm:text-sm animate-fade-in">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                Your free workspace is ready! Please enter your credentials to sign in.
+              </div>
+            </div>
+          )}
 
           {/* Error Message */}
           {error && (
@@ -181,12 +194,20 @@ export default function Login() {
                 </>
               ) : (
                 <>
-                  Sign In to Dashboard
-                  <ArrowRight className="w-4 h-4" />
+
+                  <ArrowRight className="w-4 h-4" />Sign In to Dashboard
                 </>
               )}
             </button>
           </form>
+
+          {/* Create account link */}
+          <div className="pt-2 text-center text-xs text-slate-400">
+            Don&apos;t have a workspace?{" "}
+            <Link to="/register" className="font-semibold text-indigo-400 hover:text-indigo-300">
+              Create free account
+            </Link>
+          </div>
 
           {/* Footer note */}
           <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
@@ -196,64 +217,6 @@ export default function Login() {
             </span>
           </div>
         </div>
-
-        {/* Right Side: Feature Showcase Panel */}
-        <div className="hidden lg:col-span-5 lg:flex bg-gradient-to-br from-indigo-950/60 via-slate-950 to-slate-900/90 p-10 flex-col justify-between border-l border-slate-800/80 relative overflow-hidden">
-          {/* Decorative shapes */}
-          <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-80 h-80 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
-
-          {/* Badge top */}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-700/60 text-xs font-semibold text-indigo-300 w-fit backdrop-blur-md">
-            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-            Automation & Delivery Cloud
-          </div>
-
-          {/* Center feature cards */}
-          <div className="space-y-4 my-auto">
-            <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl backdrop-blur-md flex items-start gap-3 shadow-xl">
-              <div className="p-2.5 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20 shrink-0">
-                <Zap className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-100">Multi-SMTP Delivery Routing</h4>
-                <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
-                  Automatic load balancing and failover across configured mail servers.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl backdrop-blur-md flex items-start gap-3 shadow-xl">
-              <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 shrink-0">
-                <Activity className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-100">Real-Time Dispatch Analytics</h4>
-                <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
-                  Track sent, pending, and failed campaign delivery statuses live.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl backdrop-blur-md flex items-start gap-3 shadow-xl">
-              <div className="p-2.5 bg-sky-500/10 text-sky-400 rounded-xl border border-sky-500/20 shrink-0">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-100">Recipient Management</h4>
-                <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
-                  Segment contacts into target audience lists with custom metadata fields.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom quote */}
-          <div className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800/80 backdrop-blur-md text-xs text-slate-400">
-            <p className="italic">"Seamless, resilient email dispatch built for scaling customer communication."</p>
-          </div>
-        </div>
-
       </div>
     </div>
   );

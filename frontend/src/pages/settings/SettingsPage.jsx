@@ -12,8 +12,12 @@ import {
   Trash,
   CheckCircle2,
   Key,
+  UserX,
+  UserCheck,
+  LogOut,
 } from "lucide-react";
 import settingsApi from "../../services/settingsApi";
+import usersApi from "../../services/usersApi";
 import DataTable from "../../components/common/DataTable";
 import FormModal from "../../components/common/FormModal";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
@@ -73,7 +77,10 @@ export default function SettingsPage() {
   const [usersLoading, setUsersLoading] = useState(false);
   const userModal = useModal();
   const deleteUserModal = useModal();
-  const [userData, setUserData] = useState({ name: "", email: "", role: "Editor", password: "" });
+  const passwordResetModal = useModal();
+  const [userData, setUserData] = useState({ name: "", email: "", role: "operator", password: "" });
+  const [resetPassword, setResetPassword] = useState("");
+  const [seatUsage, setSeatUsage] = useState({ admins: 0, maxAdmins: 0, users: 0, maxUsers: 0 });
 
   // Profile State
   const [profile, setProfile] = useState({
@@ -95,15 +102,40 @@ export default function SettingsPage() {
       .catch(() => {});
 
     // Fetch users list
+    loadUsers();
+  }, []);
+
+  const loadUsers = () => {
     setUsersLoading(true);
-    settingsApi
-      .getUsers()
-      .then((res) => setUsers(res.data.results || res.data || []))
+    usersApi
+      .listUsers()
+      .then((res) => {
+        const data = res.data.results || res.data || [];
+        setUsers(data);
+        // Compute seat usage from user data
+        const admins = data.filter((u) => u.role === "admin").length;
+        const nonAdmins = data.filter((u) => !(["owner", "admin"].includes(u.role))).length;
+        // Get limits from account API or settings — use first user's org info as proxy
+        setSeatUsage((prev) => ({ ...prev, admins, users: nonAdmins }));
+      })
       .catch(() => {
         setUsers([]);
       })
       .finally(() => setUsersLoading(false));
-  }, []);
+
+    // Fetch account info for seat limits
+    import("../../services/api").then(({ default: api }) => {
+      api.get("/account/").then((res) => {
+        if (res.data) {
+          setSeatUsage((prev) => ({
+            ...prev,
+            maxAdmins: res.data.max_admins || 0,
+            maxUsers: res.data.max_users || 0,
+          }));
+        }
+      }).catch(() => {});
+    });
+  };
 
   const handleSaveSettings = async (e) => {
     e.preventDefault();
@@ -127,16 +159,17 @@ export default function SettingsPage() {
     }
 
     try {
+      const payload = { ...userData };
+      if (!payload.password) delete payload.password;
       if (userModal.data?.id) {
-        await settingsApi.updateUser(userModal.data.id, userData);
+        await usersApi.updateUser(userModal.data.id, payload);
         toast.success("User updated.");
       } else {
-        await settingsApi.createUser(userData);
+        await usersApi.createUser(payload);
         toast.success("User created.");
       }
       userModal.closeModal();
-      const res = await settingsApi.getUsers();
-      setUsers(res.data.results || res.data || []);
+      loadUsers();
     } catch (err) {
       const detail = err.response?.data ? JSON.stringify(err.response.data) : "Failed to save user.";
       toast.error(typeof detail === "string" ? detail : "Failed to save user.");
@@ -146,13 +179,56 @@ export default function SettingsPage() {
   const handleDeleteUser = async () => {
     if (!deleteUserModal.data?.id) return;
     try {
-      await settingsApi.deleteUser(deleteUserModal.data.id);
+      await usersApi.deleteUser(deleteUserModal.data.id);
       toast.success("User deleted.");
       deleteUserModal.closeModal();
-      const res = await settingsApi.getUsers();
-      setUsers(res.data.results || res.data || []);
+      loadUsers();
     } catch (_e) {
-      toast.error("Failed to delete user.");
+      toast.error(_e.response?.data?.detail || "Failed to delete user.");
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!passwordResetModal.data?.id || !resetPassword) return;
+    try {
+      await usersApi.setPassword(passwordResetModal.data.id, resetPassword);
+      toast.success("Password updated and sessions revoked.");
+      passwordResetModal.closeModal();
+      setResetPassword("");
+      loadUsers();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || JSON.stringify(err.response?.data || "Failed to reset password."));
+    }
+  };
+
+  const handleDeactivateUser = async (user) => {
+    try {
+      await usersApi.deactivateUser(user.id);
+      toast.success(`${user.name || user.email} deactivated.`);
+      loadUsers();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to deactivate user.");
+    }
+  };
+
+  const handleReactivateUser = async (user) => {
+    try {
+      await usersApi.reactivateUser(user.id);
+      toast.success(`${user.name || user.email} reactivated.`);
+      loadUsers();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to reactivate user.");
+    }
+  };
+
+  const handleRevokeUserSessions = async (user) => {
+    try {
+      const res = await usersApi.revokeSessions(user.id);
+      toast.success(res.data.detail || "Sessions revoked.");
+      loadUsers();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to revoke sessions.");
     }
   };
 
@@ -186,17 +262,26 @@ export default function SettingsPage() {
       header: "Role",
       render: (val) => {
         const styles = {
-          Admin: "bg-rose-500/10 text-rose-400 border-rose-500/30",
-          Manager: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
-          Editor: "bg-sky-500/10 text-sky-400 border-sky-500/30",
-          Viewer: "bg-slate-500/10 text-slate-400 border-slate-500/30",
+          admin: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+          manager: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
+          operator: "bg-sky-500/10 text-sky-400 border-sky-500/30",
+          viewer: "bg-slate-500/10 text-slate-400 border-slate-500/30",
         };
         return (
-          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${styles[val] || styles.Viewer}`}>
+          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${styles[val] || styles.viewer}`}>
             {val}
           </span>
         );
       },
+    },
+    {
+      key: "is_active",
+      header: "Status",
+      render: (val) => (
+        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${val ? "bg-emerald-400/10 text-emerald-300 border border-emerald-500/30" : "bg-slate-500/10 text-slate-400 border border-slate-600/30"}`}>
+          {val ? "Active" : "Inactive"}
+        </span>
+      ),
     },
     {
       key: "actions",
@@ -206,19 +291,62 @@ export default function SettingsPage() {
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => {
-              setUserData(row);
+              setUserData({ name: row.name || "", email: row.email, role: row.role, password: "" });
               userModal.openModal(row);
             }}
             className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors"
+            title="Edit user"
           >
             <Edit2 className="w-4 h-4" />
           </button>
-          <button
-            onClick={() => deleteUserModal.openModal(row)}
-            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-          >
-            <Trash className="w-4 h-4" />
-          </button>
+          {row.can_reset_password && (
+            <button
+              onClick={() => {
+                setResetPassword("");
+                passwordResetModal.openModal(row);
+              }}
+              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+              title="Reset password"
+            >
+              <Key className="w-4 h-4" />
+            </button>
+          )}
+          {row.is_active && row.can_deactivate && (
+            <button
+              onClick={() => handleDeactivateUser(row)}
+              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+              title="Deactivate"
+            >
+              <UserX className="w-4 h-4" />
+            </button>
+          )}
+          {!row.is_active && (
+            <button
+              onClick={() => handleReactivateUser(row)}
+              className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+              title="Reactivate"
+            >
+              <UserCheck className="w-4 h-4" />
+            </button>
+          )}
+          {(row.active_session_count || 0) > 0 && (
+            <button
+              onClick={() => handleRevokeUserSessions(row)}
+              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+              title="Revoke sessions"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
+          {row.can_delete && (
+            <button
+              onClick={() => deleteUserModal.openModal(row)}
+              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+              title="Delete user"
+            >
+              <Trash className="w-4 h-4" />
+            </button>
+          )}
         </div>
       ),
     },
@@ -595,11 +723,11 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-slate-100">User Management & Permissions</h3>
-              <p className="text-xs text-slate-400">Manage user accounts and grant role permissions (Admin, Manager, Editor, Viewer).</p>
+              <p className="text-xs text-slate-400">Manage user accounts and grant role permissions (Admin, Manager, Operator, Viewer).</p>
             </div>
             <button
               onClick={() => {
-                setUserData({ name: "", email: "", role: "Editor", password: "" });
+                setUserData({ name: "", email: "", role: "operator", password: "" });
                 userModal.openModal();
               }}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/25"
@@ -607,6 +735,32 @@ export default function SettingsPage() {
               <Plus className="w-4 h-4" />
               Add User
             </button>
+          </div>
+
+          {/* Seat Usage */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl">
+              <p className="text-xs uppercase text-slate-400">Admin seats</p>
+              <p className="text-xl font-bold mt-1">
+                {seatUsage.admins} <span className="text-sm text-slate-500">/ {seatUsage.maxAdmins || "—"}</span>
+              </p>
+              {seatUsage.maxAdmins > 0 && (
+                <p className="text-xs text-indigo-400 mt-1">
+                  {Math.max(seatUsage.maxAdmins - seatUsage.admins, 0)} remaining
+                </p>
+              )}
+            </div>
+            <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl">
+              <p className="text-xs uppercase text-slate-400">User seats</p>
+              <p className="text-xl font-bold mt-1">
+                {seatUsage.users} <span className="text-sm text-slate-500">/ {seatUsage.maxUsers || "—"}</span>
+              </p>
+              {seatUsage.maxUsers > 0 && (
+                <p className="text-xs text-indigo-400 mt-1">
+                  {Math.max(seatUsage.maxUsers - seatUsage.users, 0)} remaining
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Role Permissions Matrix Summary */}
@@ -622,7 +776,7 @@ export default function SettingsPage() {
                 <p className="text-[11px] text-slate-400 mt-1">Manage recipients, templates, SMTP accounts, launch campaigns, view reports.</p>
               </div>
               <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
-                <p className="font-bold text-sky-400">Editor</p>
+                <p className="font-bold text-sky-400">Operator</p>
                 <p className="text-[11px] text-slate-400 mt-1">Manage recipients, draft templates, create campaign drafts, view reports.</p>
               </div>
               <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
@@ -654,8 +808,20 @@ export default function SettingsPage() {
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
                 <input
                   type="email"
+                  required
                   value={userData.email}
                   onChange={(e) => setUserData({ ...userData, email: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+                <input
+                  type="password"
+                  placeholder={userModal.data ? "Leave blank to keep current" : "Required"}
+                  required={!userModal.data}
+                  value={userData.password}
+                  onChange={(e) => setUserData({ ...userData, password: e.target.value })}
                   className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
                 />
               </div>
@@ -665,10 +831,10 @@ export default function SettingsPage() {
                   value={userData.role}
                   onChange={(role) => setUserData({ ...userData, role })}
                   options={[
-                    { value: "Admin", label: "Admin" },
-                    { value: "Manager", label: "Manager" },
-                    { value: "Editor", label: "Editor" },
-                    { value: "Viewer", label: "Viewer" },
+                    { value: "admin", label: "Admin" },
+                    { value: "manager", label: "Manager" },
+                    { value: "operator", label: "Operator" },
+                    { value: "viewer", label: "Viewer" },
                   ]}
                   ariaLabel="System role"
                 />
@@ -684,12 +850,44 @@ export default function SettingsPage() {
             </form>
           </FormModal>
 
+          {/* Password Reset Modal */}
+          <FormModal
+            isOpen={passwordResetModal.isOpen}
+            onClose={() => { passwordResetModal.closeModal(); setResetPassword(""); }}
+            title={`Reset password — ${passwordResetModal.data?.name || passwordResetModal.data?.email || ""}`}
+          >
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm text-amber-300 flex items-center gap-2">
+                <Shield className="w-4 h-4 shrink-0" />
+                Setting a new password will revoke all active sessions for this user.
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">New Temporary Password</label>
+                <input
+                  type="password"
+                  required
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
+                />
+              </div>
+              <div className="flex justify-end pt-4 border-t border-slate-800">
+                <button type="button" onClick={() => { passwordResetModal.closeModal(); setResetPassword(""); }} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-sm font-medium">
+                  Cancel
+                </button>
+                <button type="submit" className="ml-2 px-5 py-2 bg-amber-600 text-white rounded-xl text-sm font-medium">
+                  Set Password
+                </button>
+              </div>
+            </form>
+          </FormModal>
+
           <ConfirmDialog
             isOpen={deleteUserModal.isOpen}
             onCancel={deleteUserModal.closeModal}
             onConfirm={handleDeleteUser}
             title="Delete User Account"
-            message={`Are you sure you want to remove ${deleteUserModal.data?.name}?`}
+            message={`Are you sure you want to permanently delete ${deleteUserModal.data?.name || deleteUserModal.data?.email}? This action cannot be undone. Consider deactivating the user instead.`}
             confirmLabel="Delete User"
             isDanger={true}
           />

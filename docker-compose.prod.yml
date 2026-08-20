@@ -38,6 +38,7 @@ services:
       DJANGO_DEBUG: "0"
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
+      CACHE_REDIS_URL: redis://redis:6379/1
       TRUST_X_FORWARDED_FOR: "1"
     expose:
       - "8000"

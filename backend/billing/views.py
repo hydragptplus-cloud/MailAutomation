@@ -37,7 +37,7 @@ def _cookie_name(name):
 
 
 def _checkout_cookie_samesite():
-    return getattr(settings, "CHECKOUT_SESSION_COOKIE_SAMESITE", "None" if settings.CHECKOUT_SESSION_COOKIE_SECURE else "Lax")
+    return getattr(settings, "CHECKOUT_SESSION_COOKIE_SAMESITE", "Lax")
 
 
 class CsrfProtectedAPIView(APIView):
@@ -125,8 +125,32 @@ class FreeSignupView(APIView):
         serializer = FreeSignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         organization, user = provision_free_account(serializer.validated_data, request)
+
+        from rest_framework_simplejwt.tokens import RefreshToken
+        from users.models import UserLoginSession
+        from users.serializers import UserSerializer, _request_ip
+        import uuid
+
+        session_id = uuid.uuid4()
+        refresh = RefreshToken.for_user(user)
+        refresh["session_id"] = str(session_id)
+        refresh["role"] = user.role
+        refresh["organization_id"] = user.organization.id if user.organization else None
+        refresh["username"] = user.username
+        refresh["email"] = user.email
+        UserLoginSession.objects.create(
+            user=user,
+            session_id=session_id,
+            refresh_token_jti=str(refresh["jti"]),
+            ip_address=_request_ip(request),
+            user_agent=(request.META.get("HTTP_USER_AGENT", "")[:1000] if request else ""),
+        )
+
         return Response({
             "detail": "Your free account is ready.",
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": UserSerializer(user).data,
             "organization_id": organization.pk,
             "email": user.email,
             "login_url": "/login",

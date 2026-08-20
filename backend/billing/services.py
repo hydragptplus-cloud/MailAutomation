@@ -46,12 +46,11 @@ class InvoiceConflict(APIException):
     default_code = "invoice_conflict"
 
 
+from common.utils import get_client_ip
+
+
 def client_ip(request):
-    if getattr(settings, "TRUST_X_FORWARDED_FOR", False):
-        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR") or "unknown"
+    return get_client_ip(request)
 
 
 def private_hash(value):
@@ -67,7 +66,15 @@ def checkout_cookie_name(base_name):
 
 
 def normalized_email(value):
-    return (value or "").strip().lower()
+    raw = (value or "").strip().lower()
+    if "@" not in raw:
+        return raw
+    local_part, domain = raw.split("@", 1)
+    local_part = local_part.split("+", 1)[0]
+    if domain in {"gmail.com", "googlemail.com"}:
+        local_part = local_part.replace(".", "")
+        domain = "gmail.com"
+    return f"{local_part}@{domain}"
 
 
 def normalized_org_name(value):
@@ -472,13 +479,23 @@ def _create_customer(invoice_or_data, plan):
 
 @transaction.atomic
 def provision_free_account(data, request):
+    verify_turnstile(data.get("turnstile_token", ""), request)
     ip_digest = private_hash(client_ip(request))
     email_digest = private_hash(data["email"])
     if FreePlanClaim.objects.filter(ip_hash=ip_digest).exists():
         raise ValidationError({"detail": "A free account has already been created from this IP address."})
     if FreePlanClaim.objects.filter(email_hash=email_digest).exists():
         raise ValidationError({"detail": "This email has already claimed a free account."})
-    plan = Plan.objects.select_for_update().get(slug="free", is_active=True)
+    
+    plan = None
+    plan_slug = (data.get("plan_slug") or "").strip()
+    if plan_slug:
+        plan = Plan.objects.select_for_update().filter(slug=plan_slug, is_free=True, is_active=True).first()
+    if not plan:
+        plan = Plan.objects.select_for_update().filter(is_free=True, is_active=True).order_by("display_order").first()
+    if not plan:
+        raise ValidationError({"detail": "No active free plan is currently available."})
+
     organization, user = _create_customer(data, plan)
     try:
         FreePlanClaim.objects.create(ip_hash=ip_digest, email_hash=email_digest, organization=organization)

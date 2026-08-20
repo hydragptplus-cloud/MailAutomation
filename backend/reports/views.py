@@ -13,8 +13,16 @@ from .services import (
 from common.tenancy import is_owner
 
 
+from rest_framework.exceptions import PermissionDenied
+
+
 def _organization(request):
-    return None if is_owner(request.user) else request.user.organization
+    if is_owner(request.user):
+        return None
+    organization = getattr(request.user, "organization", None)
+    if not organization:
+        raise PermissionDenied("Your user is not assigned to an organization.")
+    return organization
 
 
 def _params(request) -> dict:

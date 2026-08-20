@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Check, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
-import { apiError, createFreeAccount, createInvoice, getPlans, startCheckoutEmail, verifyCheckoutEmail } from "../services/billingApi";
+import { apiError, createInvoice, getPlans, startCheckoutEmail, verifyCheckoutEmail } from "../services/billingApi";
 
 const networks = [
   ["bsc", "BNB Smart Chain", "Low network fees"],
@@ -25,7 +25,19 @@ export default function Subscribe() {
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const turnstileRef = useRef(null);
 
-  useEffect(() => { getPlans().then((items) => setPlan(items.find((item) => item.slug === planSlug))).catch(() => setError("Unable to load this plan.")); }, [planSlug]);
+  useEffect(() => {
+    getPlans()
+      .then((items) => {
+        const found = items.find((item) => item.slug === planSlug);
+        if (found && found.is_free) {
+          navigate("/register", { replace: true });
+          return;
+        }
+        setPlan(found || null);
+      })
+      .catch(() => setError("Unable to load this plan."));
+  }, [planSlug, navigate]);
+
   useEffect(() => {
     const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
     if (!siteKey || !turnstileRef.current) {
@@ -52,6 +64,7 @@ export default function Subscribe() {
     document.body.appendChild(script);
     return () => script.remove();
   }, [plan]);
+
   const update = (event) => {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
     if (event.target.name === "email") {
@@ -62,32 +75,35 @@ export default function Subscribe() {
   };
 
   async function submit(event) {
-    event.preventDefault(); setLoading(true); setError("");
+    event.preventDefault();
+    setLoading(true);
+    setError("");
     try {
-      if (plan.is_free) {
-        await createFreeAccount(form);
-        navigate("/login?created=1");
-      } else {
-        if (!emailVerified) {
-          if (!otpSent) {
-            if (!turnstileToken) {
-              setError(turnstileError
+      if (!emailVerified) {
+        if (!otpSent) {
+          if (!turnstileToken) {
+            setError(
+              turnstileError
                 ? "Checkout verification could not load. Disable content blockers, allow challenges.cloudflare.com, or try another network and refresh the page."
-                : "Complete the checkout verification before continuing.");
-              return;
-            }
-            await startCheckoutEmail(form.email, turnstileToken);
-            setOtpSent(true);
+                : "Complete the checkout verification before continuing."
+            );
             return;
           }
-          await verifyCheckoutEmail(form.email, otpCode);
-          setEmailVerified(true);
+          await startCheckoutEmail(form.email, turnstileToken);
+          setOtpSent(true);
           return;
         }
-        const invoice = await createInvoice({ ...form, plan_slug: plan.slug, idempotency_key: idempotencyKey });
-        navigate(`/payment/${invoice.id || "current"}`);
+        await verifyCheckoutEmail(form.email, otpCode);
+        setEmailVerified(true);
+        return;
       }
-    } catch (err) { setError(apiError(err)); } finally { setLoading(false); }
+      const invoice = await createInvoice({ ...form, plan_slug: plan.slug, idempotency_key: idempotencyKey });
+      navigate(`/payment/${invoice.id || "current"}`);
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setLoading(false);
+    }
   }
 
   return <div className="min-h-screen bg-[#070b14] text-slate-100 px-4 py-8 lg:py-14">
@@ -97,12 +113,45 @@ export default function Subscribe() {
         <aside className="p-8 lg:p-10 bg-gradient-to-br from-indigo-950/70 to-slate-950">
           <span className="w-11 h-11 rounded-2xl bg-indigo-500 grid place-items-center"><Mail className="w-5 h-5" /></span>
           <p className="text-indigo-300 text-xs font-bold uppercase tracking-[.16em] mt-10">Selected plan</p>
-          <h1 className="text-4xl font-black mt-2">{plan?.name || "Loading…"}</h1>
-          {plan && <><p className="text-2xl font-bold mt-5">{plan.is_free ? "Free" : `৳${plan.price_bdt.toLocaleString()}`} <span className="text-sm text-slate-500 font-normal">/ 30 days</span></p><ul className="mt-8 space-y-4 text-sm text-slate-300">{[
-            `${plan.email_limit.toLocaleString()} emails per cycle`,
-            plan.weekly_email_limit ? `${plan.weekly_email_limit.toLocaleString()} weekly cap` : plan.daily_email_limit ? `${plan.daily_email_limit.toLocaleString()} daily cap` : "30-day quota reset",
-            `${plan.max_admins} admin + ${plan.max_users} users`, `${plan.max_smtp_accounts} SMTP accounts`,
-          ].map((item) => <li key={item} className="flex gap-3"><Check className="w-4 h-4 text-emerald-400" />{item}</li>)}</ul></>}
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
+            <h1 className="text-4xl font-black">{plan?.name || "Loading…"}</h1>
+            {plan && plan.discount_percent > 0 && !plan.is_free && (
+              <span className="px-3 py-1 rounded-full bg-[#10d8a5] text-slate-950 text-[11px] font-black uppercase tracking-wider shadow-lg shadow-emerald-950/60">
+                {plan.discount_percent}% OFF
+              </span>
+            )}
+          </div>
+          {plan && (
+            <>
+              <div className="mt-5">
+                {plan.discount_percent > 0 && !plan.is_free && (
+                  <div className="flex items-center gap-2 mb-1.5 text-xs text-slate-400">
+                    <span className="line-through text-sm font-medium">৳{(plan.original_price_bdt || plan.price_bdt).toLocaleString()}</span>
+                    <span className="px-2 py-0.5 rounded-md bg-[#0e3026] border border-[#165a49] text-[#1ddc9e] text-[11px] font-bold">
+                      Save {plan.discount_percent}%
+                    </span>
+                  </div>
+                )}
+                <p className="text-2xl font-bold">
+                  {plan.is_free ? "Free" : `৳${plan.price_bdt.toLocaleString()}`}{" "}
+                  <span className="text-sm text-slate-500 font-normal">/ 30 days</span>
+                </p>
+              </div>
+              <ul className="mt-8 space-y-4 text-sm text-slate-300">
+                {[
+                  `${plan.email_limit.toLocaleString()} emails per cycle`,
+                  plan.weekly_email_limit ? `${plan.weekly_email_limit.toLocaleString()} weekly cap` : plan.daily_email_limit ? `${plan.daily_email_limit.toLocaleString()} daily cap` : "30-day quota reset",
+                  `${plan.max_admins} admin + ${plan.max_users} users`,
+                  `${plan.max_smtp_accounts} SMTP accounts`,
+                ].map((item) => (
+                  <li key={item} className="flex gap-3">
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           <div className="mt-10 pt-8 border-t border-white/10 flex gap-3 text-xs text-slate-500"><ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" /><p>Paid accounts activate only after the USDT transfer is independently verified on-chain.</p></div>
         </aside>
         <section className="p-7 sm:p-10">

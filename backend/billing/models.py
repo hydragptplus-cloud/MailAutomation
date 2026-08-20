@@ -2,6 +2,7 @@ import uuid
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 
@@ -9,7 +10,12 @@ from django.db.models import Q
 class Plan(models.Model):
     slug = models.SlugField(unique=True)
     name = models.CharField(max_length=40)
-    price_bdt = models.PositiveIntegerField()
+    original_price_bdt = models.PositiveIntegerField(default=0)
+    discount_percent = models.PositiveIntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+    price_bdt = models.PositiveIntegerField(default=0)
     email_limit = models.PositiveIntegerField()
     daily_email_limit = models.PositiveIntegerField(default=0)
     weekly_email_limit = models.PositiveIntegerField(default=0)
@@ -27,6 +33,23 @@ class Plan(models.Model):
 
     def __str__(self):
         return self.name
+
+    def calculate_payable_price(self) -> int:
+        if self.is_free or self.original_price_bdt == 0:
+            return 0
+        discount = Decimal(self.discount_percent or 0)
+        original = Decimal(self.original_price_bdt)
+        payable = (original * (Decimal(100) - discount) / Decimal(100)).quantize(Decimal("1"))
+        return int(payable)
+
+    def save(self, *args, **kwargs):
+        if self.is_free:
+            self.original_price_bdt = 0
+            self.discount_percent = 0
+            self.price_bdt = 0
+        else:
+            self.price_bdt = self.calculate_payable_price()
+        super().save(*args, **kwargs)
 
 
 class Subscription(models.Model):

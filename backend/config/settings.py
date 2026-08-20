@@ -141,7 +141,9 @@ REST_FRAMEWORK = {
         "otp_verify": "10/hour",
         "transaction_verify": "10/hour",
     },
+    "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
 }
+NUM_PROXIES = int(os.getenv("NUM_PROXIES", "1"))
 CORS_ALLOWED_ORIGINS = [x.strip() for x in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",") if x.strip()]
 if IS_PRODUCTION and any(origin == "*" for origin in CORS_ALLOWED_ORIGINS):
     raise ImproperlyConfigured("Wildcard CORS origins are not allowed in production.")
@@ -160,6 +162,8 @@ if CACHE_REDIS_URL:
     }
 else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+from celery.schedules import crontab
+
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 300
 CELERY_BEAT_SCHEDULE = {
@@ -170,6 +174,10 @@ CELERY_BEAT_SCHEDULE = {
     "expire-payment-invoices-every-five-minutes": {
         "task": "billing.tasks.expire_payment_invoices",
         "schedule": 300.0,
+    },
+    "daily-database-backup-to-blob": {
+        "task": "common.tasks.auto_backup_database_task",
+        "schedule": crontab(hour=3, minute=0),
     },
 }
 
@@ -219,7 +227,7 @@ PRECHECKOUT_SESSION_COOKIE_NAME = os.getenv("PRECHECKOUT_SESSION_COOKIE_NAME", "
 CHECKOUT_SESSION_COOKIE_SECURE = os.getenv("CHECKOUT_SESSION_COOKIE_SECURE", "1" if not DEBUG else "0") == "1"
 CHECKOUT_SESSION_COOKIE_SAMESITE = os.getenv(
     "CHECKOUT_SESSION_COOKIE_SAMESITE",
-    "None" if CHECKOUT_SESSION_COOKIE_SECURE else "Lax",
+    "Lax",
 )
 TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "")
 TURNSTILE_EXPECTED_HOSTNAME = os.getenv("TURNSTILE_EXPECTED_HOSTNAME", "")

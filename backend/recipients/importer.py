@@ -47,15 +47,21 @@ def import_recipients(file_obj, recipient_list):
     name = file_obj.name.lower()
     rows = []
     if name.endswith(".csv"):
-        text = file_obj.read().decode("utf-8-sig")
+        try:
+            text = file_obj.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise ValueError("CSV file must be valid UTF-8 encoded text.")
         rows = list(csv.DictReader(StringIO(text)))
     elif name.endswith((".xlsx", ".xlsm")):
-        wb = load_workbook(BytesIO(file_obj.read()), read_only=True, data_only=True)
-        ws = wb.active
-        values = list(ws.iter_rows(values_only=True)) if ws is not None else []
-        if values:
-            headers = [str(x).strip() if x is not None else "" for x in values[0]]
-            rows = [dict(zip(headers, row)) for row in values[1:]]
+        try:
+            wb = load_workbook(BytesIO(file_obj.read()), read_only=True, data_only=True)
+            ws = wb.active
+            values = list(ws.iter_rows(values_only=True)) if ws is not None else []
+            if values:
+                headers = [str(x).strip() if x is not None else "" for x in values[0]]
+                rows = [dict(zip(headers, row)) for row in values[1:]]
+        except Exception as exc:
+            raise ValueError(f"Unable to read Excel file: {exc}")
     else:
         raise ValueError("Only CSV and XLSX files are supported.")
 

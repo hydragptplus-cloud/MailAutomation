@@ -22,7 +22,7 @@ export default function Dashboard() {
     api
       .get("/dashboard/summary/")
       .then((r) => setData(r.data))
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, []);
 
@@ -116,7 +116,7 @@ export default function Dashboard() {
             onClick={() => navigate("/campaigns")}
             className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
           >
-            View All <ArrowRight size={14} />
+            <ArrowRight size={14} />View All
           </button>
         </div>
 

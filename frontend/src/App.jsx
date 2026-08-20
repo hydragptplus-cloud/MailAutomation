@@ -28,9 +28,11 @@ import PlatformOverview from "./pages/platform/PlatformOverview";
 import PlatformOrganizations from "./pages/platform/PlatformOrganizations";
 import PlatformBilling from "./pages/platform/PlatformBilling";
 import PlatformSessions from "./pages/platform/PlatformSessions";
+import PlatformUsers from "./pages/platform/PlatformUsers";
 import PlatformPlans from "./pages/platform/PlatformPlans";
 import AccountAdmin from "./pages/AccountAdmin";
 import Landing from "./pages/Landing";
+import Register from "./pages/Register";
 import Subscribe from "./pages/Subscribe";
 import Payment from "./pages/Payment";
 
@@ -46,6 +48,8 @@ function ProtectedRoute({ element, roles }) {
 const router = createBrowserRouter([
   { path: "/", element: <Landing /> },
   { path: "/login", element: <Login /> },
+  { path: "/register", element: <Register /> },
+  { path: "/signup", element: <Register /> },
   { path: "/subscribe/:planSlug", element: <Subscribe /> },
   { path: "/payment/:invoiceId", element: <Payment /> },
   {
@@ -74,6 +78,7 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <PlatformOverview /> },
           { path: "organizations", element: <PlatformOrganizations /> },
+          { path: "users", element: <PlatformUsers /> },
           { path: "plans", element: <PlatformPlans /> },
           { path: "billing", element: <PlatformBilling /> },
           { path: "sessions", element: <PlatformSessions /> },

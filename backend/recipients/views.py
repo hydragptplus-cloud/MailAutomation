@@ -65,8 +65,10 @@ class RecipientViewSet(TenantViewSetMixin, viewsets.ModelViewSet):
             )
         try:
             return Response(import_recipients(file_obj, recipient_list))
-        except ValueError as exc:
+        except (ValueError, UnicodeDecodeError) as exc:
             return Response({"detail": str(exc)}, status=400)
+        except Exception as exc:
+            return Response({"detail": f"File processing failed: {exc}"}, status=400)
 
     @action(detail=False, methods=["get"])
     def export_file(self, request):
@@ -74,7 +76,16 @@ class RecipientViewSet(TenantViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def bulk_update(self, request):
-        count = self.get_queryset().filter(pk__in=request.data.get("ids", [])).update(status=request.data.get("status", "active"))
+        status_val = request.data.get("status", Recipient.Status.ACTIVE)
+        if status_val not in Recipient.Status.values:
+            return Response(
+                {"detail": f"Invalid status '{status_val}'. Valid choices are: {list(Recipient.Status.values)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ids = request.data.get("ids", [])
+        if not isinstance(ids, list):
+            return Response({"detail": "ids must be a list."}, status=status.HTTP_400_BAD_REQUEST)
+        count = self.get_queryset().filter(pk__in=ids).update(status=status_val)
         return Response({"updated": count})
 
     @action(detail=False, methods=["post"])

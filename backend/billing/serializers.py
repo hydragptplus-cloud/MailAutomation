@@ -5,6 +5,8 @@ from django.conf import settings
 from rest_framework import serializers
 from django.db import transaction
 
+from decimal import Decimal
+
 from common.models import Organization
 from .models import PaymentInvoice, PaymentTransferLedger, Plan
 
@@ -27,9 +29,10 @@ class PlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = Plan
         fields = (
-            "slug", "name", "price_bdt", "email_limit", "daily_email_limit",
-            "weekly_email_limit", "max_admins", "max_users", "max_smtp_accounts", "is_free",
-            "max_recipients", "max_campaigns_per_day",
+            "slug", "name", "original_price_bdt", "discount_percent", "price_bdt",
+            "email_limit", "daily_email_limit", "weekly_email_limit", "max_admins",
+            "max_users", "max_smtp_accounts", "is_free", "max_recipients",
+            "max_campaigns_per_day",
         )
 
 
@@ -37,17 +40,29 @@ class PlanAdminSerializer(serializers.ModelSerializer):
     class Meta:
         model = Plan
         fields = (
-            "id", "slug", "name", "price_bdt", "email_limit", "daily_email_limit",
-            "weekly_email_limit", "max_admins", "max_users", "max_smtp_accounts",
-            "max_recipients", "max_campaigns_per_day", "is_free", "is_active", "display_order",
+            "id", "slug", "name", "original_price_bdt", "discount_percent", "price_bdt",
+            "email_limit", "daily_email_limit", "weekly_email_limit", "max_admins",
+            "max_users", "max_smtp_accounts", "max_recipients", "max_campaigns_per_day",
+            "is_free", "is_active", "display_order",
         )
-        read_only_fields = ("id",)
+        read_only_fields = ("id", "price_bdt")
 
     def validate(self, attrs):
         is_free = attrs.get("is_free", getattr(self.instance, "is_free", False))
-        price = attrs.get("price_bdt", getattr(self.instance, "price_bdt", 0))
-        if is_free and price != 0:
-            raise serializers.ValidationError({"price_bdt": "A free plan must have a zero price."})
+        original_price = attrs.get("original_price_bdt", getattr(self.instance, "original_price_bdt", 0))
+        discount_percent = attrs.get("discount_percent", getattr(self.instance, "discount_percent", 0))
+
+        if is_free:
+            attrs["original_price_bdt"] = 0
+            attrs["discount_percent"] = 0
+            attrs["price_bdt"] = 0
+        else:
+            if original_price < 0:
+                raise serializers.ValidationError({"original_price_bdt": "Original price cannot be negative."})
+            if not (0 <= discount_percent <= 100):
+                raise serializers.ValidationError({"discount_percent": "Discount percent must be between 0 and 100."})
+            payable = (Decimal(original_price) * (Decimal(100) - Decimal(discount_percent)) / Decimal(100)).quantize(Decimal("1"))
+            attrs["price_bdt"] = int(payable)
         return attrs
 
     @transaction.atomic
@@ -85,7 +100,8 @@ class RegistrationFieldsSerializer(serializers.Serializer):
 
 
 class FreeSignupSerializer(RegistrationFieldsSerializer):
-    pass
+    plan_slug = serializers.SlugField(required=False, allow_blank=True)
+    turnstile_token = serializers.CharField(required=False, allow_blank=True, write_only=True)
 
 
 class InvoiceCreateSerializer(RegistrationFieldsSerializer):

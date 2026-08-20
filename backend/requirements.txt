@@ -3,6 +3,7 @@ djangorestframework==3.15.2
 djangorestframework-simplejwt==5.5.0
 django-cors-headers==4.7.0
 django-filter==25.1
+whitenoise==6.8.2
 Pillow==10.0.1
 celery==5.4.0
 redis==5.2.1
@@ -15,3 +16,4 @@ pandas==2.2.3
 beautifulsoup4==4.13.3
 requests==2.32.3
 gunicorn==23.0.0
+vercel-blob==0.4.2

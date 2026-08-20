@@ -1,9 +1,10 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, CreditCard, LayoutDashboard, ShieldCheck, Tags } from "lucide-react";
+import { Building2, CreditCard, LayoutDashboard, ShieldCheck, Tags, Users } from "lucide-react";
 
 const tabs = [
   ["/platform", "Overview", LayoutDashboard, true],
   ["/platform/organizations", "Organizations", Building2],
+  ["/platform/users", "Users", Users],
   ["/platform/plans", "Plans", Tags],
   ["/platform/billing", "Billing & Payments", CreditCard],
   ["/platform/sessions", "Sessions & Security", ShieldCheck],

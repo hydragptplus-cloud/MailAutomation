@@ -61,9 +61,23 @@ class CampaignViewSet(TenantViewSetMixin, viewsets.ModelViewSet):
         return self._do_launch()
 
     def _do_launch(self):
-        campaign = self.get_object()
-        self._validate_launch(campaign)
-        launch_campaign.delay(campaign.id)
+        from django.db import transaction
+        from rest_framework.exceptions import ValidationError
+
+        with transaction.atomic():
+            campaign = Campaign.objects.select_for_update().select_related(
+                "template", "recipient_list", "smtp", "organization"
+            ).get(pk=self.get_object().pk)
+
+            if campaign.status in {Campaign.Status.QUEUED, Campaign.Status.SENDING}:
+                raise ValidationError({"detail": "Campaign is already running or queued."})
+
+            self._validate_launch(campaign)
+            campaign.status = Campaign.Status.QUEUED
+            campaign.save(update_fields=["status", "updated_at"])
+
+            transaction.on_commit(lambda: launch_campaign.delay(campaign.id))
+
         return Response({"detail": "Campaign queued successfully.", "status": Campaign.Status.QUEUED})
 
     @action(detail=True, methods=["post"])

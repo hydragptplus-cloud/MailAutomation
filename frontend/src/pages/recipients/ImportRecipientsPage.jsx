@@ -157,7 +157,7 @@ export default function ImportRecipientsPage() {
       toast.warning("Please upload a CSV or XLSX file first.");
       return;
     }
-    
+
     let targetId = selectedListId;
     if (!targetId) {
       if (lists.length > 0) {
@@ -315,20 +315,18 @@ export default function ImportRecipientsPage() {
         ].map((s) => (
           <div key={s.num} className="flex items-center gap-3">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
-                step === s.num
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
-                  : step > s.num
+              className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs transition-all ${step === s.num
+                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
+                : step > s.num
                   ? "bg-emerald-500 text-white"
                   : "bg-slate-800 text-slate-400"
-              }`}
+                }`}
             >
               {step > s.num ? <CheckCircle2 className="w-4 h-4" /> : s.num}
             </div>
             <span
-              className={`text-xs font-semibold hidden sm:inline ${
-                step === s.num ? "text-slate-100" : "text-slate-400"
-              }`}
+              className={`text-xs font-semibold hidden sm:inline ${step === s.num ? "text-slate-100" : "text-slate-400"
+                }`}
             >
               {s.title}
             </span>
@@ -419,8 +417,8 @@ export default function ImportRecipientsPage() {
               onClick={handleProceedToMapping}
               className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-600/25"
             >
-              Next: Map Columns ({allRows.length} Rows)
-              <ArrowRight className="w-4 h-4" />
+
+              <ArrowRight className="w-4 h-4" />Next: Map Columns ({allRows.length} Rows)
             </button>
           </div>
         </div>
@@ -477,8 +475,8 @@ export default function ImportRecipientsPage() {
               onClick={handleProceedToValidation}
               className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-600/25"
             >
-              Next: Validate Data
-              <ArrowRight className="w-4 h-4" />
+
+              <ArrowRight className="w-4 h-4" />Next: Validate Data
             </button>
           </div>
         </div>

@@ -184,13 +184,12 @@ export default function CreateCampaignPage() {
             onClick={() => {
               if (step > s.num) setStep(s.num);
             }}
-            className={`p-2.5 text-center text-xs font-semibold rounded-xl transition-all cursor-pointer ${
-              step === s.num
+            className={`p-2.5 text-center text-xs font-semibold rounded-xl transition-all cursor-pointer ${step === s.num
                 ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
                 : step > s.num
-                ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
-                : "bg-slate-800/50 text-slate-400 opacity-60"
-            }`}
+                  ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
+                  : "bg-slate-800/50 text-slate-400 opacity-60"
+              }`}
           >
             {s.label}
           </div>
@@ -268,8 +267,8 @@ export default function CreateCampaignPage() {
               onClick={handleNextStep}
               className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/25"
             >
-              Next: Select Template
-              <ArrowRight className="w-4 h-4" />
+
+              <ArrowRight className="w-4 h-4" />Next: Select Template
             </button>
           </div>
         </div>
@@ -304,11 +303,10 @@ export default function CreateCampaignPage() {
                   <div
                     key={tpl.id}
                     onClick={() => setCampaignData({ ...campaignData, template_id: tpl.id })}
-                    className={`p-5 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between space-y-3 ${
-                      isSelected
+                    className={`p-5 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between space-y-3 ${isSelected
                         ? "bg-indigo-600/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-xl"
                         : "bg-slate-950/60 border-slate-800 hover:border-slate-700"
-                    }`}
+                      }`}
                   >
                     <div>
                       <div className="flex items-center justify-between mb-1">
@@ -339,8 +337,8 @@ export default function CreateCampaignPage() {
               onClick={handleNextStep}
               className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/25"
             >
-              Next: Select Audience
-              <ArrowRight className="w-4 h-4" />
+
+              <ArrowRight className="w-4 h-4" /> Next: Select Audience
             </button>
           </div>
         </div>
@@ -361,11 +359,10 @@ export default function CreateCampaignPage() {
                 <div
                   key={l.id}
                   onClick={() => setCampaignData({ ...campaignData, recipient_list_id: l.id })}
-                  className={`p-5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
-                    isSelected
+                  className={`p-5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${isSelected
                       ? "bg-indigo-600/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-xl"
                       : "bg-slate-950/60 border-slate-800 hover:border-slate-700"
-                  }`}
+                    }`}
                 >
                   <div>
                     <div className="flex items-center gap-2">
@@ -390,8 +387,8 @@ export default function CreateCampaignPage() {
               onClick={handleNextStep}
               className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/25"
             >
-              Next: Select SMTP Server
-              <ArrowRight className="w-4 h-4" />
+
+              <ArrowRight className="w-4 h-4" />Next: Select SMTP Server
             </button>
           </div>
         </div>
@@ -412,11 +409,10 @@ export default function CreateCampaignPage() {
                 <div
                   key={s.id}
                   onClick={() => setCampaignData({ ...campaignData, smtp_id: s.id })}
-                  className={`p-5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
-                    isSelected
+                  className={`p-5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${isSelected
                       ? "bg-indigo-600/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-xl"
                       : "bg-slate-950/60 border-slate-800 hover:border-slate-700"
-                  }`}
+                    }`}
                 >
                   <div>
                     <div className="flex items-center gap-2">
@@ -441,8 +437,8 @@ export default function CreateCampaignPage() {
               onClick={handleNextStep}
               className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/25"
             >
-              Next: Schedule & Dispatch
-              <ArrowRight className="w-4 h-4" />
+
+              <ArrowRight className="w-4 h-4" />Next: Schedule & Dispatch
             </button>
           </div>
         </div>
@@ -459,11 +455,10 @@ export default function CreateCampaignPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div
               onClick={() => setCampaignData({ ...campaignData, send_type: "now" })}
-              className={`p-5 rounded-2xl border cursor-pointer transition-all ${
-                campaignData.send_type === "now"
+              className={`p-5 rounded-2xl border cursor-pointer transition-all ${campaignData.send_type === "now"
                   ? "bg-indigo-600/10 border-indigo-500 ring-2 ring-indigo-500/50"
                   : "bg-slate-950/60 border-slate-800"
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3">
                 <Send className="w-6 h-6 text-indigo-400" />
@@ -476,11 +471,10 @@ export default function CreateCampaignPage() {
 
             <div
               onClick={() => setCampaignData({ ...campaignData, send_type: "scheduled" })}
-              className={`p-5 rounded-2xl border cursor-pointer transition-all ${
-                campaignData.send_type === "scheduled"
+              className={`p-5 rounded-2xl border cursor-pointer transition-all ${campaignData.send_type === "scheduled"
                   ? "bg-indigo-600/10 border-indigo-500 ring-2 ring-indigo-500/50"
                   : "bg-slate-950/60 border-slate-800"
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3">
                 <Calendar className="w-6 h-6 text-emerald-400" />
@@ -511,8 +505,8 @@ export default function CreateCampaignPage() {
               onClick={handleNextStep}
               className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/25"
             >
-              Next: Review & Confirm
-              <ArrowRight className="w-4 h-4" />
+
+              <ArrowRight className="w-4 h-4" />Next: Review & Confirm
             </button>
           </div>
         </div>
