@@ -35,6 +35,7 @@ export const verifyCheckoutEmail = (email, code) => publicClient.post("/billing/
 export const createInvoice = (payload) => publicClient.post("/billing/invoices/", payload).then((response) => response.data);
 export const createCustomInvoice = (payload) => publicClient.post("/billing/custom-invoices/", payload).then((response) => response.data);
 export const createAccountInvoice = (payload) => apiClient.post("/billing/account/invoices/", payload).then((response) => response.data);
+export const createAccountCustomInvoice = (payload) => apiClient.post("/billing/account/custom-invoices/", payload).then((response) => response.data);
 export const exchangeInvoiceCode = (id, code) => publicClient.post(`/billing/invoices/${id}/session/`, { code }).then((response) => response.data);
 export const getInvoice = (id) => publicClient.get(`/billing/invoices/${id}/`).then((response) => response.data);
 export const getCurrentInvoice = () => publicClient.get("/billing/invoices/current/").then((response) => response.data);

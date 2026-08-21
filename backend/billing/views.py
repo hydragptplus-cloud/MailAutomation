@@ -19,7 +19,7 @@ from common.permissions import OwnerOnly
 from .blockchain import VerificationError, inspect_bsc_wallet_transfer, verify_invoice_transfer
 from .models import PaymentInvoice, PaymentTransferLedger, Plan
 from .serializers import (
-    AccountInvoiceCreateSerializer, CheckoutEmailStartSerializer, CheckoutEmailVerifySerializer,
+    AccountCustomInvoiceCreateSerializer, AccountInvoiceCreateSerializer, CheckoutEmailStartSerializer, CheckoutEmailVerifySerializer,
     CustomInvoiceCreateSerializer, FreeSignupSerializer, InvoiceCreateSerializer, InvoiceRecoverSerializer, InvoiceReplaceSerializer,
     InvoiceSerializer, ManualReviewActionSerializer, PaymentTransferLedgerSerializer, PlanAdminSerializer,
     PlanSerializer, BscTransactionInspectSerializer, TransactionSubmissionSerializer,
@@ -295,6 +295,23 @@ class AccountInvoiceCreateView(APIView):
         data = InvoiceSerializer(invoice).data
         return _set_checkout_cookie(
             Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK),
+            token,
+        )
+
+
+class AccountCustomInvoiceCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "public_signup"
+
+    def post(self, request):
+        if request.user.role != "admin" or not request.user.organization_id:
+            return Response({"detail": "Only an organization administrator can change its subscription."}, status=403)
+        serializer = AccountCustomInvoiceCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        invoice, token, created = serializer.save()
+        return _set_checkout_cookie(
+            Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK),
             token,
         )
 

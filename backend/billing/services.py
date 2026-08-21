@@ -702,7 +702,10 @@ def create_invoice(validated_data):
         except Exception:
             pass
         raise InvoiceConflict("A pending invoice already exists for this email. We sent a secure recovery link if it can still be used.")
-    plan = Plan.objects.select_for_update().get(slug=validated_data.pop("plan_slug"), is_active=True, is_free=False)
+    plan_slug = validated_data.pop("plan_slug")
+    if plan_slug == CUSTOM_PLAN_SLUG:
+        raise ValidationError({"plan_slug": "Custom plans must use the custom checkout."})
+    plan = Plan.objects.select_for_update().get(slug=plan_slug, is_active=True, is_free=False)
     network = validated_data["network"]
     billing_config = get_runtime_billing_configuration()
     validated_data["customer_email"] = customer_email
@@ -889,7 +892,6 @@ def resolve_manual_transfer(ledger_id, action, *, actor, notes="", refund_transa
     if action == "approve":
         if invoice.status != PaymentInvoice.Status.MANUAL_REVIEW:
             raise ValidationError({"detail": "Only manual-review invoices can be approved."})
-        ledger.resolution = PaymentTransferLedger.Resolution.MANUAL_APPROVED
         invoice = fulfill_paid_invoice(invoice.pk, type("Transfer", (), {
             "transaction_hash": ledger.transaction_hash,
             "transfer_index": ledger.transfer_index,
@@ -899,7 +901,8 @@ def resolve_manual_transfer(ledger_id, action, *, actor, notes="", refund_transa
             "confirmations": ledger.confirmations,
             "occurred_at": ledger.occurred_at,
             "raw": ledger.provider_proofs,
-        })())
+        })(), manual_approval=True)
+        ledger.refresh_from_db()
     elif action == "reject":
         ledger.resolution = PaymentTransferLedger.Resolution.MANUAL_REJECTED
         invoice.status = PaymentInvoice.Status.REJECTED
@@ -928,13 +931,16 @@ def resolve_manual_transfer(ledger_id, action, *, actor, notes="", refund_transa
 
 
 @transaction.atomic
-def fulfill_paid_invoice(invoice_id, transfer):
+def fulfill_paid_invoice(invoice_id, transfer, *, manual_approval=False):
     invoice = PaymentInvoice.objects.select_for_update(of=("self",)).select_related("plan", "organization").get(pk=invoice_id)
     if invoice.status == PaymentInvoice.Status.PAID:
         return invoice
-    if invoice.status not in {PaymentInvoice.Status.PENDING, PaymentInvoice.Status.VERIFYING}:
+    allowed_statuses = {PaymentInvoice.Status.PENDING, PaymentInvoice.Status.VERIFYING}
+    if manual_approval:
+        allowed_statuses.add(PaymentInvoice.Status.MANUAL_REVIEW)
+    if invoice.status not in allowed_statuses:
         raise ValidationError({"detail": "This invoice can no longer be fulfilled."})
-    if amount_to_raw(transfer.amount, invoice.token_decimals) != invoice.amount_raw:
+    if not manual_approval and amount_to_raw(transfer.amount, invoice.token_decimals) != invoice.amount_raw:
         record_review_claim(invoice, transfer, "amount_mismatch")
         invoice.status = PaymentInvoice.Status.MANUAL_REVIEW
         invoice.transaction_hash = transfer.transaction_hash
@@ -945,24 +951,30 @@ def fulfill_paid_invoice(invoice_id, transfer):
         invoice.save(update_fields=("status", "transaction_hash", "transfer_index", "verification_data", "verification_error", "password_hash", "updated_at"))
         return invoice
     try:
+        target_resolution = (
+            PaymentTransferLedger.Resolution.MANUAL_APPROVED
+            if manual_approval
+            else PaymentTransferLedger.Resolution.AUTO_ACTIVATED
+        )
+        history_status = "manual_approved" if manual_approval else "auto_activated"
         ledger, created = PaymentTransferLedger.objects.get_or_create(
             network=invoice.network,
             transaction_hash=transfer.transaction_hash,
             transfer_index=transfer.transfer_index,
             defaults={
                 **_ledger_payload(invoice, transfer),
-                "resolution": PaymentTransferLedger.Resolution.AUTO_ACTIVATED,
-                "resolution_history": [{"status": "auto_activated", "invoice": str(invoice.pk), "at": timezone.now().isoformat()}],
+                "resolution": target_resolution,
+                "resolution_history": [{"status": history_status, "invoice": str(invoice.pk), "at": timezone.now().isoformat()}],
             },
         )
         if not created and ledger.resolution != PaymentTransferLedger.Resolution.UNRESOLVED:
             raise IntegrityError("transfer already resolved")
         if not created:
             ledger.invoice = invoice
-            ledger.resolution = PaymentTransferLedger.Resolution.AUTO_ACTIVATED
+            ledger.resolution = target_resolution
             ledger.resolution_history = [
                 *ledger.resolution_history,
-                {"status": "auto_activated", "invoice": str(invoice.pk), "at": timezone.now().isoformat()},
+                {"status": history_status, "invoice": str(invoice.pk), "at": timezone.now().isoformat()},
             ]
             ledger.save(update_fields=("invoice", "resolution", "resolution_history", "updated_at"))
     except IntegrityError as exc:
@@ -1009,7 +1021,11 @@ def fulfill_paid_invoice(invoice_id, transfer):
     invoice.verified_at = timezone.now()
     invoice.save()
     revoke_invoice_access(invoice)
-    audit_event("invoice_auto_activated", invoice=invoice, ledger=ledger)
+    audit_event(
+        "invoice_manual_activated" if manual_approval else "invoice_auto_activated",
+        invoice=invoice,
+        ledger=ledger,
+    )
     from .tasks import send_payment_confirmation_email
 
     transaction.on_commit(lambda: cast(Any, send_payment_confirmation_email).delay(str(invoice.pk)))

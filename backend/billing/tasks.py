@@ -109,14 +109,18 @@ def _format_limit(value):
     return f"{int(value):,}" if value else "Not included"
 
 
-def _limits_text(plan):
+def _limit_value(source, key):
+    return source.get(key, 0) if isinstance(source, dict) else getattr(source, key, 0)
+
+
+def _limits_text(source):
     return (
-        f"Included email quota: {_format_limit(plan.email_limit)} per billing period\n"
-        f"Daily email limit: {_format_limit(plan.daily_email_limit)}\n"
-        f"Weekly email limit: {_format_limit(plan.weekly_email_limit)}\n"
-        f"Administrators: {_format_limit(plan.max_admins)}\n"
-        f"Users: {_format_limit(plan.max_users)}\n"
-        f"SMTP accounts: {_format_limit(plan.max_smtp_accounts)}"
+        f"Included email quota: {_format_limit(_limit_value(source, 'email_limit'))} per billing period\n"
+        f"Daily email limit: {_format_limit(_limit_value(source, 'daily_email_limit'))}\n"
+        f"Weekly email limit: {_format_limit(_limit_value(source, 'weekly_email_limit'))}\n"
+        f"Administrators: {_format_limit(_limit_value(source, 'max_admins'))}\n"
+        f"Users: {_format_limit(_limit_value(source, 'max_users'))}\n"
+        f"SMTP accounts: {_format_limit(_limit_value(source, 'max_smtp_accounts'))}"
     )
 
 
@@ -173,7 +177,7 @@ def _deliver_invoice_email(invoice, *, recovery=False):
         f"Network: {network_label}\n"
         f"Receiving address: {invoice.receiving_address}\n"
         f"Quote expires: {_format_datetime(invoice.expires_at)}\n\n"
-        f"{_limits_text(invoice.plan)}\n\n"
+        f"{_limits_text(invoice.snapshot_limits if invoice.snapshot_limits.get('custom_plan') else invoice.plan)}\n\n"
         f"Secure payment link: {link}\n\n"
         "This billing link grants access to your invoice. Do not forward it."
     )
@@ -293,7 +297,15 @@ def send_account_created_email(user_id):
     period_start = _format_datetime(subscription.current_period_start) if subscription else "Not available"
     period_end = _format_datetime(subscription.current_period_end) if subscription else "Not available"
     plan_name = plan.name if plan else "Not assigned"
-    limits = _limits_text(plan) if plan else "Plan limits are not assigned yet."
+    custom_invoice = None
+    if plan and plan.slug == "custom":
+        custom_invoice = PaymentInvoice.objects.filter(
+            organization=organization,
+            status=PaymentInvoice.Status.PAID,
+            snapshot_limits__custom_plan=True,
+        ).order_by("-verified_at").first()
+    limits_source = custom_invoice.snapshot_limits if custom_invoice else plan
+    limits = _limits_text(limits_source) if limits_source else "Plan limits are not assigned yet."
     body = (
         f"Hello {user.name or user.username},\n\n"
         "Your Mail Flow account has been created.\n\n"

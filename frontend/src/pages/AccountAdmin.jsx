@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, CalendarClock, CreditCard, Loader2 } from "lucide-react";
 import api from "../services/api";
-import { createAccountInvoice, getPlans } from "../services/billingApi";
+import { createAccountCustomInvoice, createAccountInvoice, getPlans } from "../services/billingApi";
 import { getUser } from "../utils/auth";
 import CustomSelect from "../components/common/CustomSelect";
 
@@ -13,6 +13,24 @@ const paidNetworks = [
   ["ethereum", "Ethereum"],
 ];
 
+const customAddonPrices = { email_10k: 120, admin: 150, user: 20, smtp: 300, recipient_10k: 100 };
+
+function customPrice(customPlan, premiumPlan, limits) {
+  if (!customPlan || !premiumPlan) return 0;
+  const premiumWas = Number(premiumPlan.original_price_bdt || 0);
+  const premiumPayable = Number(premiumPlan.price_bdt || premiumWas);
+  const base = Number(premiumPlan.discount_percent || 0) > 0 && premiumWas > premiumPayable
+    ? premiumWas
+    : premiumPayable;
+  const extras =
+    Math.max(0, Math.ceil((limits.email_limit - premiumPlan.email_limit) / 10000)) * customAddonPrices.email_10k +
+    Math.max(0, limits.max_admins - premiumPlan.max_admins) * customAddonPrices.admin +
+    Math.max(0, limits.max_users - premiumPlan.max_users) * customAddonPrices.user +
+    Math.max(0, limits.max_smtp_accounts - premiumPlan.max_smtp_accounts) * customAddonPrices.smtp +
+    Math.max(0, Math.ceil((limits.max_recipients - premiumPlan.max_recipients) / 10000)) * customAddonPrices.recipient_10k;
+  return Math.round((base + extras) * (1 - Number(customPlan.discount_percent || 0) / 100));
+}
+
 export default function AccountAdmin() {
   const navigate = useNavigate();
   const role = getUser().role;
@@ -20,6 +38,8 @@ export default function AccountAdmin() {
   const [account, setAccount] = useState(null);
   const [plans, setPlans] = useState([]);
   const [upgrade, setUpgrade] = useState({ plan_slug: "premium", network: "bsc" });
+  const [customLimits, setCustomLimits] = useState(null);
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [upgrading, setUpgrading] = useState(false);
   const [error, setError] = useState("");
 
@@ -30,6 +50,16 @@ export default function AccountAdmin() {
     ]).then(([a, p]) => {
       setAccount(a.data);
       setPlans(p);
+      const premiumPlus = p.find((plan) => plan.slug === "premium-plus");
+      if (premiumPlus) {
+        setCustomLimits({
+          email_limit: Math.max(a.data.monthly_email_limit || 0, premiumPlus.email_limit, 300000),
+          max_admins: Math.max(a.data.max_admins || 0, premiumPlus.max_admins, 8),
+          max_users: Math.max(a.data.max_users || 0, premiumPlus.max_users, 80),
+          max_smtp_accounts: Math.max(a.data.max_smtp_accounts || 0, premiumPlus.max_smtp_accounts, 15),
+          max_recipients: Math.max(a.data.max_recipients || 0, premiumPlus.max_recipients, 50000),
+        });
+      }
     });
 
   useEffect(() => {
@@ -43,7 +73,13 @@ export default function AccountAdmin() {
     setError("");
 
     try {
-      const invoice = await createAccountInvoice(upgrade);
+      const invoice = upgrade.plan_slug === "custom"
+        ? await createAccountCustomInvoice({
+          network: upgrade.network,
+          limits: customLimits,
+          idempotency_key: idempotencyKey,
+        })
+        : await createAccountInvoice({ ...upgrade, idempotency_key: idempotencyKey });
       navigate(`/payment/${invoice.id || "current"}`);
     } catch (e) {
       setError(
@@ -59,6 +95,9 @@ export default function AccountAdmin() {
   }
 
   const unlimited = (limit) => (limit === 0 ? "Unlimited" : limit);
+  const premiumPlusPlan = plans.find((plan) => plan.slug === "premium-plus");
+  const customPlan = plans.find((plan) => plan.slug === "custom");
+  const customPayable = customLimits ? customPrice(customPlan, premiumPlusPlan, customLimits) : 0;
 
   const cards = [
     ["Administrators", account.admin_count, account.max_admins],
@@ -155,7 +194,9 @@ export default function AccountAdmin() {
                 .map((plan) => ({
                   value: plan.slug,
                   label:
-                    plan.discount_percent > 0
+                    plan.slug === "custom"
+                      ? "Custom - configure capacity"
+                      : plan.discount_percent > 0
                       ? `${plan.name} - ৳${plan.price_bdt.toLocaleString()} (${plan.discount_percent}% off, was ৳${(
                         plan.original_price_bdt || plan.price_bdt
                       ).toLocaleString()})`
@@ -185,6 +226,25 @@ export default function AccountAdmin() {
               )}
             </button>
           </div>
+
+          {upgrade.plan_slug === "custom" && customLimits && premiumPlusPlan && (
+            <div className="mt-5 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-indigo-200">Custom capacity</h3>
+                  <p className="text-xs text-slate-500">The server recalculates and locks these limits into the invoice.</p>
+                </div>
+                <p className="text-lg font-bold text-emerald-300">৳{customPayable.toLocaleString()} / 30 days</p>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <LimitInput label="Emails" value={customLimits.email_limit} min={premiumPlusPlan.email_limit} max={1000000} step={10000} onChange={(value) => setCustomLimits({ ...customLimits, email_limit: value })} />
+                <LimitInput label="Admins" value={customLimits.max_admins} min={premiumPlusPlan.max_admins} max={25} onChange={(value) => setCustomLimits({ ...customLimits, max_admins: value })} />
+                <LimitInput label="Users" value={customLimits.max_users} min={premiumPlusPlan.max_users} max={250} onChange={(value) => setCustomLimits({ ...customLimits, max_users: value })} />
+                <LimitInput label="SMTP + inboxes" value={customLimits.max_smtp_accounts} min={premiumPlusPlan.max_smtp_accounts} max={40} onChange={(value) => setCustomLimits({ ...customLimits, max_smtp_accounts: value })} />
+                <LimitInput label="Recipients" value={customLimits.max_recipients} min={premiumPlusPlan.max_recipients} max={200000} step={10000} onChange={(value) => setCustomLimits({ ...customLimits, max_recipients: value })} />
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -208,5 +268,21 @@ export default function AccountAdmin() {
         </section>
       )}
     </div>
+  );
+}
+
+function LimitInput({ label, value, onChange, ...props }) {
+  return (
+    <label className="text-xs font-semibold text-slate-300">
+      {label}
+      <input
+        type="number"
+        required
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        {...props}
+        className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-indigo-400"
+      />
+    </label>
   );
 }

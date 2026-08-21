@@ -70,8 +70,11 @@ class PlanAdminSerializer(serializers.ModelSerializer):
         instance = super().update(instance, validated_data)
         from .services import apply_plan_to_organization
 
-        for subscription in instance.subscriptions.select_related("organization"):
-            apply_plan_to_organization(subscription.organization, instance, activate=False)
+        # Custom entitlements come from each paid invoice snapshot. Reapplying
+        # the shared template would overwrite individually purchased limits.
+        if instance.slug != "custom":
+            for subscription in instance.subscriptions.select_related("organization"):
+                apply_plan_to_organization(subscription.organization, instance, activate=False)
         return instance
 
 
@@ -110,7 +113,7 @@ class InvoiceCreateSerializer(RegistrationFieldsSerializer):
     idempotency_key = serializers.CharField(max_length=96, required=False, allow_blank=True)
 
     def validate_plan_slug(self, value):
-        if not Plan.objects.filter(slug=value, is_active=True, is_free=False).exists():
+        if value == "custom" or not Plan.objects.filter(slug=value, is_active=True, is_free=False).exists():
             raise serializers.ValidationError("Choose an active paid plan.")
         return value
 
@@ -177,7 +180,7 @@ class AccountInvoiceCreateSerializer(serializers.Serializer):
     idempotency_key = serializers.CharField(max_length=96, required=False, allow_blank=True)
 
     def validate_plan_slug(self, value):
-        if not Plan.objects.filter(slug=value, is_active=True, is_free=False).exists():
+        if value == "custom" or not Plan.objects.filter(slug=value, is_active=True, is_free=False).exists():
             raise serializers.ValidationError("Choose an active paid plan.")
         return value
 
@@ -198,6 +201,39 @@ class AccountInvoiceCreateSerializer(serializers.Serializer):
             "organization_name": user.organization.name,
             "password_hash": "",
             "idempotency_key": validated_data.get("idempotency_key", ""),
+        })
+
+
+class AccountCustomInvoiceCreateSerializer(serializers.Serializer):
+    network = serializers.ChoiceField(choices=PaymentInvoice.Network.choices)
+    idempotency_key = serializers.CharField(max_length=96, required=False, allow_blank=True)
+    limits = CustomLimitsSerializer()
+
+    def validate_network(self, value):
+        return validate_network_enabled(value)
+
+    def validate(self, attrs):
+        from .services import custom_pricing_preview
+
+        try:
+            custom_pricing_preview(attrs["limits"])
+        except Plan.DoesNotExist as exc:
+            raise serializers.ValidationError({"detail": "Custom checkout is not configured yet."}) from exc
+        return attrs
+
+    def create(self, validated_data):
+        from .services import create_custom_invoice
+
+        user = self.context["request"].user
+        return create_custom_invoice({
+            "network": validated_data["network"],
+            "organization": user.organization,
+            "customer_name": user.name or user.get_full_name() or user.username,
+            "customer_email": user.email,
+            "organization_name": user.organization.name,
+            "password_hash": "",
+            "idempotency_key": validated_data.get("idempotency_key", ""),
+            "limits": validated_data["limits"],
         })
 
 
