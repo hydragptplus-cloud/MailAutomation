@@ -21,6 +21,7 @@ import api from "../../services/api";
 import usersApi from "../../services/usersApi";
 import CustomSelect from "../../components/common/CustomSelect";
 import SearchInput from "../../components/common/SearchInput";
+import { apiError } from "../../utils/apiError";
 
 const emptyOrganization = { name: "", plan_slug: "" };
 
@@ -244,10 +245,7 @@ export default function PlatformOrganizations() {
       setMessage("Role updated.");
       await load();
     } catch (e) {
-      setError(
-        e.response?.data?.detail ||
-        JSON.stringify(e.response?.data || "Unable to update role.")
-      );
+      setError(apiError(e, "Unable to update role."));
     }
   }
 
@@ -261,10 +259,7 @@ export default function PlatformOrganizations() {
       setTempPassword("");
       await openViewUsers(viewUsersOrg);
     } catch (e) {
-      setError(
-        e.response?.data?.detail ||
-        JSON.stringify(e.response?.data || "Unable to reset password.")
-      );
+      setError(apiError(e, "Unable to reset password."));
     }
   }
 

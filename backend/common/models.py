@@ -77,7 +77,6 @@ class SystemSetting(models.Model):
     batch_size = models.PositiveIntegerField(default=50)
     delay_between_emails = models.PositiveIntegerField(default=1)
     tracking_enabled = models.BooleanField(default=True)
-    open_tracking = models.BooleanField(default=True)
     click_tracking = models.BooleanField(default=True)
     plaintext_fallback = models.BooleanField(default=True)
     unsubscribe_footer = models.TextField(default="You are receiving this email because you opted into our newsletter. Click here to unsubscribe.")
@@ -116,7 +115,7 @@ class BillingConfiguration(models.Model):
     payment_ton_wallet = models.CharField(max_length=128)
     encrypted_tron_api_key = models.TextField(blank=True)
     encrypted_toncenter_api_key = models.TextField(blank=True)
-    public_landing_monitor_active = models.BooleanField(default=True)
+    public_landing_monitor_active = models.BooleanField(default=False)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

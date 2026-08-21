@@ -57,7 +57,6 @@ export default function CampaignReportPage() {
             failed,
             pending,
             success_rate: rate,
-            open_rate: 0.0,
             click_rate: 0.0,
           },
           timeline: [
@@ -121,6 +120,7 @@ export default function CampaignReportPage() {
   const campaign = campaignReport?.campaign || {};
   const summary = campaignReport?.summary || {};
   const timeline = campaignReport?.timeline || [];
+  const topClickedLinks = campaignReport?.top_clicked_links || [];
 
   const logColumns = [
     { key: "recipient_email", header: "Recipient Email", render: (val, row) => <span className="font-mono text-slate-200">{val || row.email}</span> },
@@ -175,18 +175,14 @@ export default function CampaignReportPage() {
           <StatusBadge status={campaign.status} />
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl">
             <p className="text-xs text-slate-400 font-medium">Total Volume</p>
             <p className="text-2xl font-bold text-slate-100 mt-1">{summary.total || 0}</p>
           </div>
           <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
             <p className="text-xs text-emerald-400 font-medium">Success Rate</p>
-            <p className="text-2xl font-bold text-emerald-200 mt-1">{summary.success_rate || 100}%</p>
-          </div>
-          <div className="p-4 bg-sky-500/10 border border-sky-500/30 rounded-xl">
-            <p className="text-xs text-sky-400 font-medium">Open Rate</p>
-            <p className="text-2xl font-bold text-sky-200 mt-1">{summary.open_rate || 0}%</p>
+            <p className="text-2xl font-bold text-emerald-200 mt-1">{summary.success_rate ?? 0}%</p>
           </div>
           <div className="p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl">
             <p className="text-xs text-indigo-400 font-medium">Click Rate</p>
@@ -199,6 +195,22 @@ export default function CampaignReportPage() {
           <ProgressBar sent={summary.sent} failed={summary.failed} pending={summary.pending} total={summary.total} height="h-3" />
         </div>
       </div>
+
+      {topClickedLinks.length > 0 && (
+        <div className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-4 shadow-xl">
+          <h3 className="text-sm font-bold text-slate-100">Most Clicked Links</h3>
+          <div className="space-y-2">
+            {topClickedLinks.map((link) => (
+              <div key={link.destination_url} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                <span className="truncate text-xs text-indigo-300" title={link.destination_url}>{link.destination_url}</span>
+                <span className="shrink-0 text-xs font-mono text-slate-400">
+                  {link.unique_click_count} unique · {link.click_count} total
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Timeline Section */}
       <div className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-4 shadow-xl">

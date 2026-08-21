@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "django_filters",
     "users",
     "dashboard",
@@ -109,7 +110,7 @@ if MEDIA_STORAGE_BACKEND in {"vercel_blob", "blob"}:
     STORAGES["default"] = {
         "BACKEND": "common.storage.VercelBlobStorage",
         "OPTIONS": {
-            "access": os.getenv("MEDIA_STORAGE_ACCESS", "public"),
+            "access": os.getenv("MEDIA_STORAGE_ACCESS", "private"),
             "token": os.getenv("BLOB_READ_WRITE_TOKEN", ""),
             "store_id": os.getenv("BLOB_STORE_ID", ""),
             "public_url_base": os.getenv("BLOB_PUBLIC_BASE_URL", ""),
@@ -212,6 +213,9 @@ MAIL_FLOW_CAMPAIGN_RELAY_URL = os.getenv("MAIL_FLOW_CAMPAIGN_RELAY_URL", "")
 MAIL_FLOW_CAMPAIGN_RELAY_SECRET = os.getenv("MAIL_FLOW_CAMPAIGN_RELAY_SECRET", "")
 MAIL_FLOW_CAMPAIGN_RELAY_TIMEOUT = float(os.getenv("MAIL_FLOW_CAMPAIGN_RELAY_TIMEOUT", "30"))
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+TRACKING_BASE_URL = os.getenv("TRACKING_BASE_URL", "http://localhost:8000")
+if IS_PRODUCTION and not os.getenv("TRACKING_BASE_URL"):
+    raise ImproperlyConfigured("TRACKING_BASE_URL is required in production for campaign click tracking.")
 FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY") or ""
 if IS_PRODUCTION and not FIELD_ENCRYPTION_KEY:
     raise ImproperlyConfigured("FIELD_ENCRYPTION_KEY is required in production.")
@@ -228,7 +232,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = DATA_UPLOAD_MAX_MEMORY_SIZE
 
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SAMESITE = "Strict"
+CSRF_COOKIE_SAMESITE = os.getenv("CSRF_COOKIE_SAMESITE", "Lax")
 SECURE_SSL_REDIRECT = not DEBUG
 SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000")) if not DEBUG else 0
 SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
@@ -239,6 +243,9 @@ SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 CSRF_TRUSTED_ORIGINS = [x.strip() for x in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if x.strip()]
 CHECKOUT_SESSION_COOKIE_NAME = os.getenv("CHECKOUT_SESSION_COOKIE_NAME", "mailflow_checkout")
+AUTH_ACCESS_COOKIE_NAME = os.getenv("AUTH_ACCESS_COOKIE_NAME", "mailflow_access")
+AUTH_REFRESH_COOKIE_NAME = os.getenv("AUTH_REFRESH_COOKIE_NAME", "mailflow_refresh")
+AUTH_COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "Lax")
 PRECHECKOUT_SESSION_COOKIE_NAME = os.getenv("PRECHECKOUT_SESSION_COOKIE_NAME", "mailflow_precheckout")
 CHECKOUT_SESSION_COOKIE_SECURE = os.getenv("CHECKOUT_SESSION_COOKIE_SECURE", "1" if not DEBUG else "0") == "1"
 CHECKOUT_SESSION_COOKIE_SAMESITE = os.getenv(

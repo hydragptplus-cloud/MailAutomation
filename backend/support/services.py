@@ -1,5 +1,6 @@
 import email
 import imaplib
+import re
 import smtplib
 import ssl
 from email.message import EmailMessage
@@ -51,18 +52,14 @@ def notify_support_team(ticket):
     try:
         from billing.tasks import _send_message
 
-        body = (
-            f"New Mail Flow support request\n\n"
-            f"Ticket: {ticket.ticket_number}\n"
-            f"From: {ticket.name} <{ticket.email}>\n"
-            f"Organization: {ticket.organization.name if ticket.organization else 'Visitor'}\n"
-            f"Subject: {ticket.subject}\n\n"
-            f"{ticket.messages.first().body if ticket.messages.exists() else ''}"
-        )
+        recipient = settings.MAIL_FLOW_REPLY_TO or "support@annomous.com"
+        # This is an external alert only. The original ticket already exists in
+        # the platform workspace, so keep the email body to the user's message.
+        body = ticket.messages.first().body if ticket.messages.exists() else ""
         _send_message(
             f"Support request {ticket.ticket_number} - {ticket.subject}",
             body,
-            "support@annomous.com",
+            recipient,
             sender="general",
         )
     except Exception:
@@ -122,7 +119,9 @@ def sync_mailbox(mailbox, *, limit=20):
         connection = _imap_connect(mailbox)
         try:
             connection.select("INBOX")
-            _, data = connection.search(None, "UNSEEN")
+            # Read the most recent messages, not only messages still marked unread.
+            # A user may have opened mail in another client before this workspace syncs.
+            _, data = connection.search(None, "ALL")
             ids = (data[0].split() if data and data[0] else [])[-int(limit):]
             for message_id in ids:
                 _, message_data = connection.fetch(message_id, "(RFC822)")
@@ -144,10 +143,11 @@ def sync_mailbox(mailbox, *, limit=20):
 
 def _imap_connect(mailbox):
     if mailbox.imap_encryption == SupportMailbox.Encryption.SSL:
-        return imaplib.IMAP4_SSL(mailbox.imap_host, mailbox.imap_port)
-    connection = imaplib.IMAP4(mailbox.imap_host, mailbox.imap_port)
-    if mailbox.imap_encryption == SupportMailbox.Encryption.TLS:
-        connection.starttls()
+        connection = imaplib.IMAP4_SSL(mailbox.imap_host, mailbox.imap_port)
+    else:
+        connection = imaplib.IMAP4(mailbox.imap_host, mailbox.imap_port)
+        if mailbox.imap_encryption == SupportMailbox.Encryption.TLS:
+            connection.starttls()
     connection.login(mailbox.imap_username, mailbox.get_imap_password())
     return connection
 
@@ -179,7 +179,15 @@ def _payload_text(part):
 def _import_message(mailbox, raw):
     parsed = email.message_from_bytes(raw)
     external_id = (parsed.get("Message-ID") or "").strip()
-    if external_id and SupportMessage.objects.filter(external_message_id=external_id).exists():
+    # Handle platform support notifications before generic Message-ID
+    # deduplication. Older releases may already have stored the notification as
+    # a duplicate ticket, but we still need to link its original ticket.
+    if _is_internal_support_notification(parsed):
+        return _link_support_notification(mailbox, parsed, external_id)
+    if external_id and (
+        SupportMessage.objects.filter(external_message_id=external_id).exists()
+        or SupportTicket.objects.filter(external_message_id=external_id).exists()
+    ):
         return False
     sender_name, sender_email = parseaddr(parsed.get("From", ""))
     subject = _decode(parsed.get("Subject", "")) or "Support email"
@@ -205,4 +213,42 @@ def _import_message(mailbox, raw):
         body=body,
         external_message_id=external_id,
     )
+    return True
+
+
+def _is_internal_support_notification(parsed):
+    """Prevent support-ticket notification emails from becoming tickets."""
+    subject = _decode(parsed.get("Subject", ""))
+    body = _plain_body(parsed).lstrip()
+    _, sender_email = parseaddr(parsed.get("From", ""))
+    return bool(
+        subject.startswith("Support request MF-")
+        and (
+            body.startswith("New Mail Flow support request")
+            or sender_email.lower() == settings.MAIL_FLOW_GENERAL_SENDER_EMAIL.lower()
+        )
+    )
+
+
+def _link_support_notification(mailbox, parsed, external_id):
+    """Link an inbox notification to its original support ticket."""
+    if mailbox.organization_id is not None:
+        return False
+    subject = _decode(parsed.get("Subject", ""))
+    match = re.match(r"^Support request (MF-\d{6}-\d+)\s+-", subject)
+    if not match:
+        return False
+    ticket = SupportTicket.objects.filter(ticket_number=match.group(1)).first()
+    if ticket is None:
+        return False
+    update_fields = []
+    if ticket.mailbox_id != mailbox.id:
+        ticket.mailbox = mailbox
+        update_fields.append("mailbox")
+    if external_id and not ticket.external_message_id:
+        ticket.external_message_id = external_id
+        update_fields.append("external_message_id")
+    if not update_fields:
+        return False
+    ticket.save(update_fields=(*update_fields, "updated_at"))
     return True

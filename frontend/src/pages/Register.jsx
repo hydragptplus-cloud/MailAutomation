@@ -114,12 +114,10 @@ export default function Register() {
 
       const response = await createFreeAccount(payload);
 
-      // If backend returned access/refresh tokens, auto-authenticate
-      if (response.access && response.refresh) {
-        setTokens(response.access, response.refresh);
-        if (response.user) {
-          setUser(response.user);
-        }
+      // Authentication tokens are set as HttpOnly cookies by the backend.
+      if (response.user) {
+        setTokens();
+        setUser(response.user);
         navigate("/dashboard", { replace: true });
       } else {
         // Fallback redirect to login with created param

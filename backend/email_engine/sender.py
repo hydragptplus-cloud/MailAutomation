@@ -9,7 +9,8 @@ from django.conf import settings  # type: ignore
 from django.db import models, transaction  # type: ignore
 from django.utils import timezone  # type: ignore
 from campaigns.models import CampaignLog
-from common.models import Organization
+from campaigns.tracking import append_unsubscribe_footer, rewrite_tracked_links, unsubscribe_url
+from common.models import Organization, SystemSetting
 from common.quotas import record_email_result, usage_snapshot, validate_organization_active
 from rest_framework.exceptions import ValidationError
 from .campaign_relay import send_campaign_via_relay
@@ -83,6 +84,12 @@ def send_log_email(log_id):
             log.save(update_fields=["status", "message", "updated_at"])
             return {"log_id": log_id, "status": CampaignLog.Status.SKIPPED, "detail": f"Campaign is {log.campaign.status}"}
 
+        if log.recipient_id and getattr(log.recipient, "status", "") != "active":
+            log.status = CampaignLog.Status.SKIPPED
+            log.message = "Skipped: Recipient is not subscribed."
+            log.save(update_fields=["status", "message", "updated_at"])
+            return {"log_id": log_id, "status": CampaignLog.Status.SKIPPED, "detail": "Recipient is not subscribed"}
+
         if not log.campaign or log.organization_id != log.campaign.organization_id:
             raise RuntimeError("Cross-organization campaign log rejected.")
 
@@ -150,6 +157,20 @@ def send_log_email(log_id):
     html_template = str(template.html or "")
     subject = render_personalization(subject_template, context)
     html = render_personalization(html_template, context)
+    organization_settings = SystemSetting.objects.filter(organization=organization).only(
+        "tracking_enabled", "click_tracking", "unsubscribe_footer"
+    ).first()
+    web_unsubscribe_url = unsubscribe_url(log_id)
+    html = append_unsubscribe_footer(
+        html,
+        log_id,
+        organization_settings.unsubscribe_footer if organization_settings else "",
+    )
+    if (
+        organization_settings is None
+        or (organization_settings.tracking_enabled and organization_settings.click_tracking)
+    ):
+        html = rewrite_tracked_links(html, log_id)
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -157,12 +178,17 @@ def send_log_email(log_id):
     from_name = str(account.from_name) if account.from_name else None
     msg["From"] = formataddr((from_name, from_email)) if from_name else from_email
     msg["To"] = log.recipient_email
+    if web_unsubscribe_url:
+        msg["List-Unsubscribe"] = f"<{web_unsubscribe_url}>"
+        msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     if account.reply_to:
         msg["Reply-To"] = str(account.reply_to)
     domain = from_email.split("@")[-1] if "@" in from_email else "annomous.com"
     message_id = make_msgid(domain=domain)
     msg["Message-ID"] = message_id
     text = "This email requires an HTML-capable email client."
+    if web_unsubscribe_url:
+        text += f"\n\nUnsubscribe: {web_unsubscribe_url}"
     msg.set_content(text)
     msg.add_alternative(html, subtype="html")
 

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { setTokens, setUser } from "../utils/auth";
 import twoFactorApi from "../services/twoFactorApi";
+import { apiError } from "../utils/apiError";
 
 const apiBase = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
@@ -67,7 +68,7 @@ export default function Login() {
       const response = await axios.post(`${apiBase}/auth/token/`, {
         username: username.trim(),
         password,
-      });
+      }, { withCredentials: true });
 
       const data = response.data;
 
@@ -84,15 +85,12 @@ export default function Login() {
       }
 
       // Normal login (no 2FA)
-      const { access, refresh, user } = data;
-      setTokens(access, refresh);
+      const { user } = data;
+      setTokens();
       setUser(user);
       navigate("/dashboard", { replace: true });
     } catch (err) {
-      const detail =
-        err.response?.data?.detail ||
-        (err.response?.data ? JSON.stringify(err.response.data) : "Login failed. Please check your credentials.");
-      setError(typeof detail === "string" ? detail : "Login failed. Please check your credentials.");
+      setError(apiError(err, "Login failed. Please check your credentials."));
     } finally {
       setLoading(false);
     }
@@ -154,8 +152,8 @@ export default function Login() {
     setError("");
     try {
       const response = await twoFactorApi.verifyLogin({ challenge_token: challengeToken, code });
-      const { access, refresh, user } = response.data;
-      setTokens(access, refresh);
+      const { user } = response.data;
+      setTokens();
       setUser(user);
       navigate("/dashboard", { replace: true });
     } catch (err) {

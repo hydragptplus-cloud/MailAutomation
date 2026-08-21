@@ -201,13 +201,22 @@ export default function ReportsPage() {
       key: "success_rate",
       header: "Success Rate",
       render: (val, row) => {
-        const rate = val || row.rate || 100;
+        const rate = val ?? row.rate ?? 0;
         return (
           <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold text-xs">
             {rate}%
           </span>
         );
       },
+    },
+    {
+      key: "click_rate",
+      header: "Click Rate",
+      render: (val, row) => (
+        <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 font-semibold text-xs">
+          {val ?? 0}% ({row.unique_click_count ?? 0})
+        </span>
+      ),
     },
     { key: "started_at", header: "Started Time", render: (val) => (val ? new Date(val).toLocaleDateString() : "-") },
     {

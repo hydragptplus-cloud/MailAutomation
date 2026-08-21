@@ -3,17 +3,24 @@ function getTokenValue(key) {
   return localStorage.getItem(key);
 }
 
+if (typeof window !== "undefined") {
+  // Remove JWTs left by releases that stored credentials in JavaScript-accessible storage.
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+}
+
 export function getAccessToken() {
-  return getTokenValue("access_token");
+  return null;
 }
 
 export function getRefreshToken() {
-  return getTokenValue("refresh_token");
+  return null;
 }
 
 export function setTokens(access, refresh) {
-  if (access) localStorage.setItem("access_token", access);
-  if (refresh) localStorage.setItem("refresh_token", refresh);
+  // JWTs are stored only in HttpOnly cookies by the backend.
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
 }
 
 export function clearTokens() {
@@ -43,8 +50,7 @@ export function isTokenValid(token) {
 }
 
 export function isAuthenticated() {
-  const token = getAccessToken();
-  return Boolean(token && isTokenValid(token));
+  return Boolean(getUser().email);
 }
 
 export function getUser() {

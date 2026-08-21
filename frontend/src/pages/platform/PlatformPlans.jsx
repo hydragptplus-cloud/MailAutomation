@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check, Pencil, Plus, Tag, X } from "lucide-react";
 import api from "../../services/api";
+import { apiError } from "../../utils/apiError";
 
 const emptyPlan = {
   slug: "", name: "", original_price_bdt: 0, discount_percent: 0, price_bdt: 0,
@@ -59,7 +60,7 @@ export default function PlatformPlans() {
       if (editing) await api.patch(`/billing/platform/plans/${editing}/`, payload);
       else await api.post("/billing/platform/plans/", payload);
       close(); setMessage("Pricing plan saved. The public pricing cards now use the updated values."); await load();
-    } catch (requestError) { setError(requestError.response?.data?.detail || JSON.stringify(requestError.response?.data || "Unable to save pricing plan.")); }
+    } catch (requestError) { setError(apiError(requestError, "Unable to save pricing plan.")); }
     finally { setSaving(false); }
   }
 

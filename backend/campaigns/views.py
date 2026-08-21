@@ -1,15 +1,125 @@
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
+from django.db import transaction
+from django.http import Http404, HttpResponse, HttpResponseRedirect
+from django.utils.html import escape
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
 from common.permissions import RolePermission
 from common.quotas import usage_snapshot, validate_email_quota, validate_organization_active
 from common.tenancy import TenantViewSetMixin, request_organization
-from .models import Campaign, CampaignLog
+from recipients.models import Recipient
+from .models import Campaign, CampaignClick, CampaignLog, CampaignUnsubscribe
 from .serializers import CampaignLogSerializer, CampaignSerializer
 from .tasks import launch_campaign, send_campaign_email
+from .tracking import anonymized_ip_hash, read_click_token, read_unsubscribe_token
+
+
+def _request_ip(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    return forwarded_for.split(",", 1)[0].strip() if forwarded_for else request.META.get("REMOTE_ADDR", "")
+
+
+def _unsubscribe_response(title, message, *, confirmation=False, status_code=200):
+    form = ""
+    if confirmation:
+        form = (
+            '<form method="post">'
+            '<input type="hidden" name="List-Unsubscribe" value="One-Click">'
+            '<button type="submit">Unsubscribe</button>'
+            "</form>"
+        )
+    html = (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="robots" content="noindex,nofollow">'
+        f"<title>{escape(title)}</title>"
+        "<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#020617;color:#e2e8f0;font:16px system-ui,sans-serif}"
+        "main{width:min(30rem,calc(100% - 3rem));padding:2rem;border:1px solid #1e293b;border-radius:1rem;background:#0f172a;text-align:center}"
+        "h1{margin:0 0 .75rem;font-size:1.5rem}p{color:#94a3b8;line-height:1.6}button{margin-top:1rem;padding:.75rem 1.25rem;border:0;border-radius:.7rem;background:#4f46e5;color:white;font-weight:700;cursor:pointer}</style>"
+        "</head><body><main>"
+        f"<h1>{escape(title)}</h1><p>{escape(message)}</p>{form}"
+        "</main></body></html>"
+    )
+    response = HttpResponse(html, status=status_code, content_type="text/html; charset=utf-8")
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response["Referrer-Policy"] = "no-referrer"
+    response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+    return response
+
+
+class CampaignUnsubscribeView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def _campaign_log(self, token):
+        try:
+            log_id = read_unsubscribe_token(token)
+            return CampaignLog.objects.select_related("organization").get(pk=log_id, organization__isnull=False)
+        except (KeyError, TypeError, ValueError, CampaignLog.DoesNotExist):
+            raise Http404("Unsubscribe link is invalid.")
+
+    def get(self, request, token):
+        campaign_log = self._campaign_log(token)
+        return _unsubscribe_response(
+            "Unsubscribe from emails",
+            "Confirm that you want to stop receiving campaign emails from this organization.",
+            confirmation=True,
+        )
+
+    def post(self, request, token):
+        campaign_log = self._campaign_log(token)
+        with transaction.atomic():
+            affected = Recipient.objects.filter(
+                organization_id=campaign_log.organization_id,
+                email__iexact=campaign_log.recipient_email,
+                status=Recipient.Status.ACTIVE,
+            ).update(status=Recipient.Status.UNSUBSCRIBED)
+            CampaignLog.objects.filter(
+                organization_id=campaign_log.organization_id,
+                recipient_email__iexact=campaign_log.recipient_email,
+                status=CampaignLog.Status.PENDING,
+            ).update(status=CampaignLog.Status.SKIPPED, message="Skipped: Recipient unsubscribed.")
+            CampaignUnsubscribe.objects.get_or_create(
+                campaign_log=campaign_log,
+                defaults={
+                    "recipient_email": campaign_log.recipient_email,
+                    "affected_recipients": affected,
+                    "ip_hash": anonymized_ip_hash(_request_ip(request)),
+                    "user_agent": request.META.get("HTTP_USER_AGENT", "")[:500],
+                },
+            )
+        return _unsubscribe_response(
+            "You are unsubscribed",
+            "This email address will no longer receive campaign emails from this organization.",
+        )
+
+
+class CampaignClickRedirectView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        try:
+            log_id, destination_url = read_click_token(token)
+            campaign_log = CampaignLog.objects.only("id").get(pk=log_id)
+        except (KeyError, TypeError, ValueError, CampaignLog.DoesNotExist):
+            raise Http404("Tracking link is invalid.")
+
+        CampaignClick.objects.create(
+            campaign_log=campaign_log,
+            destination_url=destination_url,
+            ip_hash=anonymized_ip_hash(_request_ip(request)),
+            user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
+        )
+        response = HttpResponseRedirect(destination_url)
+        response["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response["Referrer-Policy"] = "no-referrer"
+        return response
 
 
 class CampaignViewSet(TenantViewSetMixin, viewsets.ModelViewSet):

@@ -1,5 +1,6 @@
 import axios from "axios";
 import apiClient from "./apiClient";
+export { apiError } from "../utils/apiError";
 
 const baseURL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 const publicClient = axios.create({ baseURL, timeout: 20000, withCredentials: true });
@@ -43,14 +44,3 @@ export const verifyInvoice = (id, transaction) => publicClient.post(`/billing/in
 export const recoverInvoice = (email) => publicClient.post("/billing/invoices/recover/", { email }).then((response) => response.data);
 export const replaceInvoice = (id, password) => publicClient.post(`/billing/invoices/${id}/replace/`, { password }).then((response) => response.data);
 export const cancelInvoice = (id) => publicClient.post(`/billing/invoices/${id}/cancel/`, {}).then((response) => response.data);
-
-export function apiError(error, fallback = "Something went wrong. Please try again.") {
-  const data = error?.response?.data;
-  if (typeof data?.detail === "string") return data.detail;
-  if (data && typeof data === "object") {
-    const first = Object.values(data)[0];
-    if (Array.isArray(first)) return first[0];
-    if (typeof first === "string") return first;
-  }
-  return fallback;
-}

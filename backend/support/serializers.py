@@ -6,7 +6,6 @@ from common.plan_features import (
     organization_mailbox_usage,
     organization_support_workspace_allowed,
 )
-from common.tenancy import request_organization
 from .models import SupportMailbox, SupportMessage, SupportTicket
 from .services import create_support_ticket
 
@@ -74,6 +73,7 @@ class SupportMailboxSerializer(serializers.ModelSerializer):
     smtp_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     organization_name = serializers.CharField(source="organization.name", read_only=True, allow_null=True)
     password_configured = serializers.SerializerMethodField()
+    last_error = serializers.SerializerMethodField()
 
     class Meta:
         model = SupportMailbox
@@ -97,6 +97,11 @@ class SupportMailboxSerializer(serializers.ModelSerializer):
     def get_password_configured(self, obj):
         return bool(obj.encrypted_imap_password)
 
+    def get_last_error(self, obj):
+        if not obj.last_error:
+            return ""
+        return "The last mailbox sync failed. Check the mailbox host, port, username, password, and encryption settings."
+
     def validate(self, attrs):
         request = self.context["request"]
         user = request.user
@@ -107,11 +112,9 @@ class SupportMailboxSerializer(serializers.ModelSerializer):
             if not organization_support_workspace_allowed(organization):
                 raise serializers.ValidationError({"detail": "Mail workspace is available only on Premium+ and Custom plans."})
             attrs["organization"] = organization
-        elif self.instance is None:
-            organization = attrs.get("organization") or request_organization(request, required=False)
-            if organization is None:
-                raise serializers.ValidationError({"organization": "Select an organization."})
-            attrs["organization"] = organization
+        else:
+            # Owner mailboxes belong only to the platform support workspace.
+            attrs["organization"] = None
         if self.instance is None and not attrs.get("imap_password"):
             raise serializers.ValidationError({"imap_password": "Password is required."})
         organization = attrs.get("organization") or getattr(self.instance, "organization", None)

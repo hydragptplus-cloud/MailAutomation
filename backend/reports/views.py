@@ -86,10 +86,9 @@ class ReportsExportView(APIView):
             campaigns = campaign_reports_list(params, _organization(request))
             if fmt == "json":
                 return Response(campaigns)
-            headers = ["Campaign ID", "Campaign Name", "Subject", "Status", "Recipients", "Sent", "Failed", "Success Rate (%)"]
-            rows = [[c["id"], c["name"], c["subject"], c["status"], c["total_recipients"], c["sent_count"], c["failed_count"], c["success_rate"]] for c in campaigns]
+            headers = ["Campaign ID", "Campaign Name", "Subject", "Status", "Recipients", "Sent", "Failed", "Success Rate (%)", "Unique Clicks", "Total Clicks", "Click Rate (%)"]
+            rows = [[c["id"], c["name"], c["subject"], c["status"], c["total_recipients"], c["sent_count"], c["failed_count"], c["success_rate"], c["unique_click_count"], c["click_count"], c["click_rate"]] for c in campaigns]
             if fmt == "xlsx":
                 return export_excel("campaign_reports.xlsx", headers, rows)
             return export_csv("campaign_reports.csv", headers, rows)
-
 

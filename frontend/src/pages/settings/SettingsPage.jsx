@@ -36,6 +36,7 @@ import CustomSelect from "../../components/common/CustomSelect";
 import { useModal } from "../../hooks/useModal";
 import { useToast } from "../../hooks/useToast";
 import { getUser, setUser as updateStoredUser } from "../../utils/auth";
+import { apiError } from "../../utils/apiError";
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -47,7 +48,6 @@ export default function SettingsPage() {
   // Settings State
   const [settings, setSettings] = useState({
     // General
-    app_name: "Mail Flow",
     company_name: "Acme Enterprises Inc.",
     default_sender_name: "Marketing Team",
     default_sender_email: "marketing@acme.com",
@@ -63,7 +63,6 @@ export default function SettingsPage() {
     batch_size: 50,
     delay_between_emails: 1,
     tracking_enabled: true,
-    open_tracking: true,
     click_tracking: true,
     plaintext_fallback: true,
     unsubscribe_footer: "You are receiving this email because you opted into our newsletter. Click here to unsubscribe.",
@@ -182,7 +181,8 @@ export default function SettingsPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await settingsApi.updateSettings(settings);
+      const { app_name: _platformAppName, ...organizationSettings } = settings;
+      const res = await settingsApi.updateSettings(organizationSettings);
       if (res.data) setSettings((prev) => ({ ...prev, ...res.data }));
       toast.success("System configuration settings updated successfully!");
     } catch (_e) {
@@ -212,8 +212,7 @@ export default function SettingsPage() {
       userModal.closeModal();
       loadUsers();
     } catch (err) {
-      const detail = err.response?.data ? JSON.stringify(err.response.data) : "Failed to save user.";
-      toast.error(typeof detail === "string" ? detail : "Failed to save user.");
+      toast.error(apiError(err, "Failed to save user."));
     }
   };
 
@@ -239,7 +238,7 @@ export default function SettingsPage() {
       setResetPassword("");
       loadUsers();
     } catch (err) {
-      toast.error(err.response?.data?.detail || JSON.stringify(err.response?.data || "Failed to reset password."));
+      toast.error(apiError(err, "Failed to reset password."));
     }
   };
 
@@ -563,18 +562,9 @@ export default function SettingsPage() {
       {/* Tab 1: General Settings */}
       {activeTab === "general" && (
         <form onSubmit={handleSaveSettings} className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-6 shadow-xl">
-          <h3 className="text-lg font-bold text-slate-100">General Application Settings</h3>
+          <h3 className="text-lg font-bold text-slate-100">General Organization Settings</h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Application Name</label>
-              <input
-                type="text"
-                value={settings.app_name}
-                onChange={(e) => setSettings({ ...settings, app_name: e.target.value })}
-                className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3.5 py-2 text-sm text-slate-100"
-              />
-            </div>
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">Company Name</label>
               <input
@@ -696,17 +686,7 @@ export default function SettingsPage() {
 
           <div className="space-y-3 pt-2">
             <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Tracking & Fallback Options</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <label className="flex items-center gap-3 p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.open_tracking}
-                  onChange={(e) => setSettings({ ...settings, open_tracking: e.target.checked })}
-                  className="w-4 h-4 text-indigo-600 rounded bg-slate-800 border-slate-700"
-                />
-                <span className="text-xs font-medium text-slate-200">Enable Open Tracking</span>
-              </label>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <label className="flex items-center gap-3 p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
                 <input
                   type="checkbox"

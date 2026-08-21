@@ -112,7 +112,6 @@ export default function CampaignDetailsPage() {
   const failed = campaign.failed_count || 0;
   const pending = campaign.pending_count || 0;
   const total = campaign.total_recipients || sent + failed + pending;
-  const openRate = campaign.open_rate || 0;
   const clickRate = campaign.click_rate || 0;
 
   const logColumns = [
@@ -203,7 +202,7 @@ export default function CampaignDetailsPage() {
           <ProgressBar sent={sent} failed={failed} pending={pending} total={total} height="h-3" />
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl">
             <p className="text-xs text-slate-400 font-semibold">Total Recipients</p>
             <p className="text-xl font-bold text-slate-100 mt-1">{total}</p>
@@ -215,10 +214,6 @@ export default function CampaignDetailsPage() {
           <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl">
             <p className="text-xs text-rose-400 font-semibold">Failed Deliveries</p>
             <p className="text-xl font-bold text-rose-200 mt-1">{failed}</p>
-          </div>
-          <div className="p-4 bg-sky-500/10 border border-sky-500/30 rounded-xl">
-            <p className="text-xs text-sky-400 font-semibold">Open Rate</p>
-            <p className="text-xl font-bold text-sky-200 mt-1">{openRate}%</p>
           </div>
           <div className="p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl">
             <p className="text-xs text-indigo-400 font-semibold">Click Rate</p>

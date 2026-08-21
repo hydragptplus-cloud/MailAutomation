@@ -62,3 +62,32 @@ class CampaignLog(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["campaign", "recipient_email"], name="unique_campaign_recipient_email")]
         indexes = [models.Index(fields=["campaign", "status"])]
+
+
+class CampaignClick(models.Model):
+    objects = models.Manager()
+    campaign_log = models.ForeignKey(CampaignLog, on_delete=models.CASCADE, related_name="clicks")
+    destination_url = models.TextField()
+    ip_hash = models.CharField(max_length=64, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True)
+    clicked_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-clicked_at"]
+        indexes = [
+            models.Index(fields=["campaign_log", "clicked_at"]),
+            models.Index(fields=["clicked_at"]),
+        ]
+
+
+class CampaignUnsubscribe(models.Model):
+    objects = models.Manager()
+    campaign_log = models.OneToOneField(CampaignLog, on_delete=models.CASCADE, related_name="unsubscribe")
+    recipient_email = models.EmailField()
+    affected_recipients = models.PositiveIntegerField(default=0)
+    ip_hash = models.CharField(max_length=64, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True)
+    unsubscribed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-unsubscribed_at"]

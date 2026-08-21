@@ -1,6 +1,7 @@
 from typing import cast
 
 import uuid
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
@@ -13,6 +14,27 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from django.middleware.csrf import get_token
+
+
+def _set_auth_cookies(request, response, access, refresh=None):
+    get_token(request)
+    cookie_options = {
+        "secure": settings.SESSION_COOKIE_SECURE,
+        "httponly": True,
+        "samesite": settings.AUTH_COOKIE_SAMESITE,
+        "path": "/api/",
+    }
+    response.set_cookie(settings.AUTH_ACCESS_COOKIE_NAME, access, max_age=5 * 60, **cookie_options)
+    if refresh:
+        response.set_cookie(settings.AUTH_REFRESH_COOKIE_NAME, refresh, max_age=24 * 60 * 60, **cookie_options)
+    return response
+
+
+def _clear_auth_cookies(response):
+    response.delete_cookie(settings.AUTH_ACCESS_COOKIE_NAME, path="/api/", samesite=settings.AUTH_COOKIE_SAMESITE)
+    response.delete_cookie(settings.AUTH_REFRESH_COOKIE_NAME, path="/api/", samesite=settings.AUTH_COOKIE_SAMESITE)
+    return response
 from common.models import SystemSetting
 from common.permissions import OwnerOrAdmin
 from common.tenancy import is_owner, scope_queryset
@@ -63,12 +85,32 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
 
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code < 400 and isinstance(response.data, dict) and response.data.get("access"):
+            access = response.data.pop("access")
+            refresh = response.data.pop("refresh", None)
+            _set_auth_cookies(request, response, access, refresh)
+        return response
+
 
 class CustomTokenRefreshView(TokenRefreshView):
     permission_classes = ()
     serializer_class = SessionTokenRefreshSerializer
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
+
+    def post(self, request, *args, **kwargs):
+        data = request.data.copy()
+        if not data.get("refresh"):
+            data["refresh"] = request.COOKIES.get(settings.AUTH_REFRESH_COOKIE_NAME, "")
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        payload = dict(serializer.validated_data)
+        access = payload.pop("access")
+        refresh = payload.pop("refresh", None)
+        response = Response(payload)
+        return _set_auth_cookies(request, response, access, refresh)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -236,13 +278,10 @@ class SettingsView(APIView):
         user = _request_user(request)
         if user.organization:
             return SystemSetting.objects.get_or_create(organization=user.organization)[0]
-        # For Owner / users without an explicit organization, use or create global system setting
+        # Owner-managed platform settings must never fall back to an
+        # organization's configuration.
         setting = SystemSetting.objects.filter(organization__isnull=True).first()
-        if not setting:
-            setting = SystemSetting.objects.first()
-        if not setting:
-            setting = SystemSetting.objects.create(organization=None)
-        return setting
+        return setting or SystemSetting.objects.create(organization=None)
 
     def get(self, request):
         setting_obj = self._setting(request)
@@ -251,12 +290,16 @@ class SettingsView(APIView):
         return Response(SystemSettingSerializer(setting_obj).data)
 
     def patch(self, request):
-        if _request_user(request).role not in {"owner", "admin"}:
+        user = _request_user(request)
+        if user.role not in {"owner", "admin"}:
             return Response({"detail": "You do not have permission to change settings."}, status=status.HTTP_403_FORBIDDEN)
         setting_obj = self._setting(request)
         if not setting_obj:
             return Response({"detail": "System settings not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = SystemSettingSerializer(setting_obj, data=request.data, partial=True)
+        data = request.data.copy()
+        if user.role != "owner":
+            data.pop("app_name", None)
+        serializer = SystemSettingSerializer(setting_obj, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
@@ -305,7 +348,7 @@ class LogoutView(APIView):
         UserLoginSession.objects.filter(
             user=user, session_id=session_id, revoked_at__isnull=True
         ).update(revoked_at=timezone.now())
-        return Response({"detail": "Signed out."})
+        return _clear_auth_cookies(Response({"detail": "Signed out."}))
 
 
 class SessionViewSet(viewsets.ReadOnlyModelViewSet):
@@ -488,8 +531,7 @@ class TwoFactorVerifyLoginView(APIView):
             ip_address=_request_ip_raw(request),
             user_agent=request.META.get("HTTP_USER_AGENT", "")[:1000],
         )
-        return Response({
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
+        response = Response({
             "user": UserSerializer(user).data,
         })
+        return _set_auth_cookies(request, response, str(refresh.access_token), str(refresh))

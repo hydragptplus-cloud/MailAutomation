@@ -1,5 +1,6 @@
 import React from "react";
 import { AlertCircle, RefreshCw } from "lucide-react";
+import { safeErrorMessage } from "../../utils/apiError";
 
 export default function ErrorAlert({ message, onRetry, title = "API Error" }) {
   if (!message) return null;
@@ -9,7 +10,7 @@ export default function ErrorAlert({ message, onRetry, title = "API Error" }) {
       <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
       <div className="flex-1 text-sm">
         <h4 className="font-semibold text-rose-100 mb-0.5">{title}</h4>
-        <p className="opacity-90">{typeof message === "object" ? JSON.stringify(message) : message}</p>
+        <p className="opacity-90">{safeErrorMessage(message)}</p>
       </div>
       {onRetry && (
         <button

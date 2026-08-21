@@ -41,6 +41,8 @@ export default function ReportCharts({
   // Calculations for Donut Chart
   const totalSuccessVal = successData.reduce((a, b) => a + (b.value || 0), 0);
   const successCount = successData.find((s) => s.name === "Successful")?.value || 0;
+  const failureCount = Math.max(totalSuccessVal - successCount, 0);
+  const hasDeliveryData = totalSuccessVal > 0;
   const successPercent = totalSuccessVal > 0 ? Math.round((successCount / totalSuccessVal) * 100) : 0;
 
   // Calculations for Bar Chart
@@ -167,34 +169,40 @@ export default function ReportCharts({
                 stroke="#1e293b"
                 strokeWidth="12"
               />
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="transparent"
-                stroke="#10b981"
-                strokeWidth="12"
-                strokeDasharray={`${(successPercent * 251.2) / 100} 251.2`}
-                strokeLinecap="round"
-                className="transition-all duration-1000"
-              />
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="transparent"
-                stroke="#ef4444"
-                strokeWidth="12"
-                strokeDasharray={`${((100 - successPercent) * 251.2) / 100} 251.2`}
-                strokeDashoffset={`-${(successPercent * 251.2) / 100}`}
-                strokeLinecap="round"
-                className="transition-all duration-1000"
-              />
+              {successCount > 0 && (
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="40"
+                  fill="transparent"
+                  stroke="#10b981"
+                  strokeWidth="12"
+                  strokeDasharray={`${(successPercent * 251.2) / 100} 251.2`}
+                  strokeLinecap="round"
+                  className="transition-all duration-1000"
+                />
+              )}
+              {failureCount > 0 && (
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="40"
+                  fill="transparent"
+                  stroke="#ef4444"
+                  strokeWidth="12"
+                  strokeDasharray={`${((100 - successPercent) * 251.2) / 100} 251.2`}
+                  strokeDashoffset={`-${(successPercent * 251.2) / 100}`}
+                  strokeLinecap="round"
+                  className="transition-all duration-1000"
+                />
+              )}
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <span className="text-2xl font-black text-slate-100">{successPercent}%</span>
-              <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">
-                Success
+              <span className="text-2xl font-black text-slate-100">
+                {hasDeliveryData ? `${successPercent}%` : "—"}
+              </span>
+              <span className={`text-[10px] uppercase font-bold tracking-wider ${hasDeliveryData ? "text-emerald-400" : "text-slate-500"}`}>
+                {hasDeliveryData ? "Success" : "No data"}
               </span>
             </div>
           </div>
@@ -225,7 +233,7 @@ export default function ReportCharts({
       {/* 3. Campaign Performance (Grouped SVG Bars) */}
       <div className="p-5 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-4 shadow-xl min-w-0">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-100">Campaign Engagement Metrics</h3>
+          <h3 className="text-sm font-bold text-slate-100">Campaign Delivery Metrics</h3>
           {perfData.length > 0 && (
             <div className="flex items-center gap-3 text-[11px] font-medium">
               <span className="flex items-center gap-1 text-sky-400">
@@ -233,6 +241,9 @@ export default function ReportCharts({
               </span>
               <span className="flex items-center gap-1 text-emerald-400">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" /> Delivered
+              </span>
+              <span className="flex items-center gap-1 text-indigo-400">
+                <span className="w-2 h-2 rounded-full bg-indigo-500" /> Clicked
               </span>
             </div>
           )}
@@ -247,14 +258,15 @@ export default function ReportCharts({
           <div className="space-y-3.5 pt-1">
             {perfData.map((c, idx) => {
               const sentPct = Math.round(((c.sent || 0) / maxPerfVal) * 100);
-              const openPct = Math.round(((c.opens || 0) / maxPerfVal) * 100);
+              const deliveredPct = Math.round(((c.delivered || 0) / maxPerfVal) * 100);
+              const clickedPct = Math.round(((c.clicks || 0) / maxPerfVal) * 100);
 
               return (
                 <div key={idx} className="space-y-1.5">
                   <div className="flex justify-between text-xs">
                     <span className="font-semibold text-slate-200 truncate">{c.name}</span>
                     <span className="text-[11px] text-slate-400 font-mono">
-                      {c.opens || 0} Delivered ({Math.round(((c.opens || 0) / (c.sent || 1)) * 100)}%)
+                      {c.delivered || 0} delivered · {c.clicks || 0} clicked
                     </span>
                   </div>
                   <div className="space-y-1">
@@ -262,7 +274,10 @@ export default function ReportCharts({
                       <div style={{ width: `${sentPct}%` }} className="bg-sky-500 h-full rounded-full" />
                     </div>
                     <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden flex">
-                      <div style={{ width: `${openPct}%` }} className="bg-emerald-500 h-full rounded-full" />
+                      <div style={{ width: `${deliveredPct}%` }} className="bg-emerald-500 h-full rounded-full" />
+                    </div>
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden flex">
+                      <div style={{ width: `${clickedPct}%` }} className="bg-indigo-500 h-full rounded-full" />
                     </div>
                   </div>
                 </div>

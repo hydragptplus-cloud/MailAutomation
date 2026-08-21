@@ -1,6 +1,6 @@
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import TruncDate
-from campaigns.models import Campaign, CampaignLog
+from campaigns.models import Campaign, CampaignClick, CampaignLog
 from recipients.models import Recipient
 from smtp_manager.models import SMTPAccount
 
@@ -61,12 +61,13 @@ def summary_report(params=None, organization=None):
     for c in campaign_qs[:5]:
         c_sent = log_qs.filter(campaign=c, status=CampaignLog.Status.SENT).count()
         c_failed = log_qs.filter(campaign=c, status=CampaignLog.Status.FAILED).count()
+        c_clicks = CampaignClick.objects.filter(campaign_log__campaign=c).values("campaign_log_id").distinct().count()
         if c_sent > 0 or c_failed > 0:
             campaign_performance.append({
                 "name": c.name,
                 "sent": c_sent + c_failed,
-                "opens": c_sent,
-                "clicks": 0,
+                "delivered": c_sent,
+                "clicks": c_clicks,
             })
 
     # Dynamic SMTP Usage Chart Data
@@ -124,6 +125,10 @@ def campaign_reports_list(params=None, organization=None):
         total_c = c.total_count or (sent_c + failed_c)
         total_attempts = sent_c + failed_c
         rate = round((sent_c / total_attempts * 100), 1) if total_attempts > 0 else 0.0
+        click_qs = CampaignClick.objects.filter(campaign_log__campaign=c)
+        click_count = click_qs.count()
+        unique_click_count = click_qs.values("campaign_log_id").distinct().count()
+        click_rate = round((unique_click_count / sent_c * 100), 1) if sent_c > 0 else 0.0
 
         results.append({
             "id": c.id,  # type: ignore[attr-defined]  # type: ignore[attr-defined]
@@ -139,6 +144,9 @@ def campaign_reports_list(params=None, organization=None):
             "failed_count": failed_c,
             "rate": rate,
             "success_rate": rate,
+            "click_count": click_count,
+            "unique_click_count": unique_click_count,
+            "click_rate": click_rate,
             "created_at": c.created_at,
             "started_at": c.started_at,
             "finished_at": c.finished_at,
@@ -160,6 +168,15 @@ def campaign_report_detail(campaign_id, organization=None):
     total_c = campaign.total_count or (sent_c + failed_c + pending_c)
     total_attempts = sent_c + failed_c
     rate = round((sent_c / total_attempts * 100), 1) if total_attempts > 0 else 0.0
+    click_qs = CampaignClick.objects.filter(campaign_log__campaign=campaign)
+    click_count = click_qs.count()
+    unique_click_count = click_qs.values("campaign_log_id").distinct().count()
+    click_rate = round((unique_click_count / sent_c * 100), 1) if sent_c > 0 else 0.0
+    top_clicked_links = list(
+        click_qs.values("destination_url")
+        .annotate(click_count=Count("id"), unique_click_count=Count("campaign_log_id", distinct=True))
+        .order_by("-unique_click_count", "-click_count")[:10]
+    )
 
     timeline = [
         {"stage": "Campaign Created", "timestamp": campaign.created_at.isoformat() if campaign.created_at else None},
@@ -185,9 +202,11 @@ def campaign_report_detail(campaign_id, organization=None):
             "failed": failed_c,
             "pending": pending_c,
             "success_rate": rate,
-            "open_rate": 0.0,
-            "click_rate": 0.0,
+            "click_count": click_count,
+            "unique_click_count": unique_click_count,
+            "click_rate": click_rate,
         },
+        "top_clicked_links": top_clicked_links,
         "timeline": timeline,
     }
 

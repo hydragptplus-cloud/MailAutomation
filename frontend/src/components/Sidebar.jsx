@@ -55,7 +55,7 @@ export default function Sidebar({ isOpen, onClose }) {
   const planSlug = account?.subscription?.plan;
   const planName = account?.subscription?.plan_name || "Current Plan";
   const isFreePlan = planSlug === "free";
-  const showPlanCard = role !== "owner" && Boolean(account?.subscription);
+  const showPlanCard = role !== "owner" && Boolean(account?.subscription) && isFreePlan;
 
   return (
     <>
@@ -124,18 +124,18 @@ export default function Sidebar({ isOpen, onClose }) {
               <div className="flex items-center justify-between gap-3">
                 <p className="text-base font-bold text-slate-100">{planName}</p>
                 <span className="rounded-full border border-amber-400/20 bg-amber-400/15 px-2.5 py-1 text-[11px] font-bold text-amber-200">
-                  {isFreePlan ? "Free" : "Active"}
+                  Free
                 </span>
               </div>
               <p className="mt-3 text-sm leading-6 text-slate-400">
-                {isFreePlan ? "Upgrade for more sending power." : "Manage billing and plan limits."}
+                Upgrade for more sending power.
               </p>
               <NavLink
                 to="/account"
                 onClick={onClose}
                 className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-indigo-500/70 px-3 py-2.5 text-sm font-bold text-indigo-300 transition-colors hover:bg-indigo-500/10 hover:text-indigo-200"
               >
-                <ArrowRight className="h-4 w-4" />  {isFreePlan ? "Upgrade Plan" : "Manage Plan"}
+                <ArrowRight className="h-4 w-4" /> Upgrade Plan
               </NavLink>
             </div>
           )}

@@ -31,6 +31,7 @@ import PlatformBroadcasts from "./pages/platform/PlatformBroadcasts";
 import PlatformSessions from "./pages/platform/PlatformSessions";
 import PlatformUsers from "./pages/platform/PlatformUsers";
 import PlatformPlans from "./pages/platform/PlatformPlans";
+import PlatformSettings from "./pages/platform/PlatformSettings";
 import AccountAdmin from "./pages/AccountAdmin";
 import Landing from "./pages/Landing";
 import Register from "./pages/Register";
@@ -92,6 +93,7 @@ const router = createBrowserRouter([
           { path: "billing", element: <PlatformBilling /> },
           { path: "broadcasts", element: <PlatformBroadcasts /> },
           { path: "sessions", element: <PlatformSessions /> },
+          { path: "settings", element: <PlatformSettings /> },
         ],
       },
       { path: "/account", element: <ProtectedRoute roles={["admin", "manager", "operator", "viewer"]} element={<AccountAdmin />} /> },

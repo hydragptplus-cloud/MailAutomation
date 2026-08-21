@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Inbox, MailPlus, RefreshCw, Send, Settings2 } from "lucide-react";
 import supportApi from "../services/supportApi";
+import CustomSelect from "../components/common/CustomSelect";
+import { apiError } from "../utils/apiError";
+
+const ticketFilterOptions = [
+  { value: "all", label: "All" },
+  { value: "new", label: "New" },
+  { value: "open", label: "Open" },
+  { value: "waiting", label: "Waiting" },
+  { value: "resolved", label: "Resolved" },
+];
 
 const emptyMailbox = {
   name: "",
@@ -40,17 +50,39 @@ export default function MailWorkspace() {
     [tickets, filter]
   );
 
-  async function load() {
-    const [ticketResponse, mailboxResponse] = await Promise.all([
-      supportApi.getTickets(),
-      supportApi.getMailboxes(),
-    ]);
+  async function loadTickets(nextMailboxId, role = access?.role) {
+    if (!nextMailboxId && role !== "owner") {
+      setTickets([]);
+      setSelectedId(null);
+      return;
+    }
+    const ticketResponse = await supportApi.getTickets(role === "owner" ? undefined : { mailbox: nextMailboxId });
     const nextTickets = ticketResponse.data.results || ticketResponse.data || [];
-    const nextMailboxes = mailboxResponse.data.results || mailboxResponse.data || [];
     setTickets(nextTickets);
+    setSelectedId(nextTickets[0]?.id || null);
+  }
+
+  async function load(role = access?.role) {
+    const mailboxResponse = await supportApi.getMailboxes();
+    const nextMailboxes = mailboxResponse.data.results || mailboxResponse.data || [];
     setMailboxes(nextMailboxes);
-    if (!selectedId && nextTickets[0]) setSelectedId(nextTickets[0].id);
-    if (!mailboxId && nextMailboxes[0]) setMailboxId(String(nextMailboxes[0].id));
+    const nextMailboxId = mailboxId || (nextMailboxes[0] ? String(nextMailboxes[0].id) : "");
+    setMailboxId(nextMailboxId);
+    await loadTickets(nextMailboxId, role);
+  }
+
+  async function selectMailbox(id) {
+    const nextMailboxId = String(id);
+    setMailboxId(nextMailboxId);
+    setLoading(true);
+    setError("");
+    try {
+      await loadTickets(nextMailboxId, access?.role);
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || "Unable to load mailbox messages.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -62,7 +94,7 @@ export default function MailWorkspace() {
           setError(response.data.plan_available === false ? "Mail workspace is available only on Premium+ and Custom plans." : "Mail workspace is not enabled for this organization.");
           return null;
         }
-        return load();
+        return load(response.data.role);
       })
       .catch((requestError) => setError(requestError.response?.data?.detail || "Mail workspace is not available."))
       .finally(() => setLoading(false));
@@ -71,6 +103,10 @@ export default function MailWorkspace() {
   async function sendReply(event) {
     event.preventDefault();
     if (!selected || !reply.trim()) return;
+    if (access?.role === "owner" && !mailboxId) {
+      setError("Add and select a platform support inbox before replying.");
+      return;
+    }
     setBusy(true);
     setError("");
     setMessage("");
@@ -117,7 +153,7 @@ export default function MailWorkspace() {
       setMessage("Mailbox added to the workspace.");
       await load();
     } catch (requestError) {
-      setError(requestError.response?.data?.detail || JSON.stringify(requestError.response?.data || "Unable to save mailbox."));
+      setError(apiError(requestError, "Unable to save mailbox."));
     } finally {
       setBusy(false);
     }
@@ -142,8 +178,8 @@ export default function MailWorkspace() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Mail Workspace</h1>
-          <p className="mt-1 text-sm text-slate-400">Read support mail, manage ticket threads, and reply from connected support mailboxes.</p>
+          <h1 className="text-2xl font-bold text-slate-100">{access?.role === "owner" ? "Platform Support Workspace" : "Mail Workspace"}</h1>
+          <p className="mt-1 text-sm text-slate-400">{access?.role === "owner" ? "Manage Help & Support requests and reply from platform support inboxes." : "Read mail and reply from this organization's connected inboxes."}</p>
         </div>
         <button
           onClick={() => setShowMailboxForm((value) => !value)}
@@ -207,13 +243,14 @@ export default function MailWorkspace() {
             <div className="flex items-center gap-2 font-semibold text-slate-100">
               <Inbox className="h-4 w-4 text-indigo-300" /> Tickets
             </div>
-            <select value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs">
-              <option value="all">All</option>
-              <option value="new">New</option>
-              <option value="open">Open</option>
-              <option value="waiting">Waiting</option>
-              <option value="resolved">Resolved</option>
-            </select>
+            <CustomSelect
+              value={filter}
+              onChange={setFilter}
+              options={ticketFilterOptions}
+              ariaLabel="Filter tickets by status"
+              size="sm"
+              className="w-32 bg-slate-950"
+            />
           </div>
           <div className="max-h-[620px] overflow-y-auto">
             {visibleTickets.map((ticket) => (
@@ -269,16 +306,9 @@ export default function MailWorkspace() {
               </div>
 
               <form onSubmit={sendReply} className="border-t border-slate-800 p-4">
-                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <select value={mailboxId} onChange={(event) => setMailboxId(event.target.value)} className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-                    <option value="">Default Mail Flow sender</option>
-                    {mailboxes.map((mailbox) => (
-                      <option key={mailbox.id} value={mailbox.id}>{mailbox.name} · {mailbox.email}</option>
-                    ))}
-                  </select>
-                </div>
+                <p className="mb-3 text-xs text-slate-400">Replying from {mailboxes.find((item) => String(item.id) === mailboxId)?.email}</p>
                 <textarea value={reply} onChange={(event) => setReply(event.target.value)} rows={5} className="w-full resize-y rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100" />
-                <button disabled={busy || !reply.trim()} className="mt-3 inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-bold disabled:opacity-60">
+                <button disabled={busy || !reply.trim() || (access?.role === "owner" && !mailboxId)} className="mt-3 inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-bold disabled:opacity-60">
                   <Send className="h-4 w-4" /> Send reply
                 </button>
               </form>
@@ -290,16 +320,18 @@ export default function MailWorkspace() {
 
         <section className="rounded-md border border-slate-800 bg-slate-900/50">
           <div className="border-b border-slate-800 p-4">
-            <h2 className="font-semibold text-slate-100">Mailboxes</h2>
+            <h2 className="font-semibold text-slate-100">{access?.role === "owner" ? "Support inboxes" : "Mailboxes"}</h2>
           </div>
           <div className="divide-y divide-slate-800">
             {mailboxes.map((mailbox) => (
-              <div key={mailbox.id} className="p-4">
-                <p className="font-medium text-slate-100">{mailbox.name}</p>
-                <p className="mt-1 text-xs text-slate-400">{mailbox.email}</p>
-                <p className="mt-1 text-[11px] text-slate-500">{mailbox.last_synced_at ? `Synced ${new Date(mailbox.last_synced_at).toLocaleString()}` : "Not synced yet"}</p>
+              <div key={mailbox.id} className={`p-2 ${String(mailbox.id) === mailboxId ? "bg-indigo-500/10" : ""}`}>
+                <button onClick={() => selectMailbox(mailbox.id)} className="w-full rounded-md p-2 text-left hover:bg-slate-800/60">
+                  <p className="font-medium text-slate-100">{mailbox.name}</p>
+                  <p className="mt-1 text-xs text-slate-400">{mailbox.email}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">{mailbox.last_synced_at ? `Synced ${new Date(mailbox.last_synced_at).toLocaleString()}` : "Not synced yet"}</p>
+                </button>
                 {mailbox.last_error && <p className="mt-2 text-xs text-rose-300">{mailbox.last_error}</p>}
-                <button disabled={busy} onClick={() => syncMailbox(mailbox.id)} className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-60">
+                <button disabled={busy} onClick={() => syncMailbox(mailbox.id)} className="mx-2 mb-2 mt-1 inline-flex items-center gap-2 rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-60">
                   <RefreshCw className="h-3.5 w-3.5" /> Sync
                 </button>
               </div>

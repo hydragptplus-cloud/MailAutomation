@@ -90,7 +90,10 @@ class SessionTokenRefreshSerializer(TokenRefreshSerializer):
         session_id = refresh.get("session_id")
         user_id = refresh.get("user_id")
         if not session_id or not UserLoginSession.objects.filter(
-            session_id=session_id, user_id=user_id, revoked_at__isnull=True
+            session_id=session_id,
+            user_id=user_id,
+            refresh_token_jti=str(refresh.get("jti", "")),
+            revoked_at__isnull=True,
         ).exists():
             raise InvalidToken("Session is no longer valid.")
         data = super().validate(attrs)

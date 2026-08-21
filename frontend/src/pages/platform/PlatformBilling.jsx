@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, CircleDollarSign, KeyRound, Loader2, Radio, Search, Save, Wallet } from "lucide-react";
 import api from "../../services/api";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+import { apiError } from "../../utils/apiError";
 
 const emptyBilling = {
   usdt_bdt_rate: "", payment_evm_wallet: "", payment_tron_wallet: "", payment_ton_wallet: "",
@@ -57,7 +58,7 @@ export default function PlatformBilling() {
       const response = await api.patch("/platform/billing-configuration/", payload);
       const value = { ...emptyBilling, ...response.data, tron_api_key: "", toncenter_api_key: "" };
       setBilling(value); setOriginal(value); setMessage("Billing configuration saved.");
-    } catch (requestError) { setError(requestError.response?.data?.detail || JSON.stringify(requestError.response?.data || "Unable to save billing configuration.")); }
+  } catch (requestError) { setError(apiError(requestError, "Unable to save billing configuration.")); }
     finally { setSaving(false); }
   }
 

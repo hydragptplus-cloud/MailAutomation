@@ -21,6 +21,7 @@ import api from "../../services/api";
 import CustomSelect from "../../components/common/CustomSelect";
 import SearchInput from "../../components/common/SearchInput";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+import { apiError } from "../../utils/apiError";
 
 const ROLES = [
   { value: "admin", label: "Admin" },
@@ -146,10 +147,7 @@ export default function PlatformUsers() {
       closeUserModal();
       await load();
     } catch (e) {
-      setError(
-        e.response?.data?.detail ||
-        JSON.stringify(e.response?.data || "Unable to save user.")
-      );
+      setError(apiError(e, "Unable to save user."));
     } finally {
       setSaving(false);
     }
@@ -166,10 +164,7 @@ export default function PlatformUsers() {
       setNewPassword("");
       await load();
     } catch (e) {
-      setError(
-        e.response?.data?.detail ||
-        JSON.stringify(e.response?.data || "Unable to reset password.")
-      );
+      setError(apiError(e, "Unable to reset password."));
     } finally {
       setSaving(false);
     }

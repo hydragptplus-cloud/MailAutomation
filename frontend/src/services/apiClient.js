@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getAccessToken, getRefreshToken, setTokens, clearTokens } from "../utils/auth";
+import { clearTokens } from "../utils/auth";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
@@ -14,6 +14,24 @@ export const apiClient = axios.create({
 
 let isRefreshing = false;
 let failedQueue = [];
+let csrfToken = "";
+let csrfPromise = null;
+
+async function getCsrfToken() {
+  const cookieToken = document.cookie.split("; ").find((row) => row.startsWith("csrftoken="))?.split("=")[1];
+  if (cookieToken) return decodeURIComponent(cookieToken);
+  if (csrfToken) return csrfToken;
+  if (!csrfPromise) {
+    csrfPromise = axios
+      .get(`${BASE_URL}/billing/csrf/`, { withCredentials: true })
+      .then((response) => {
+        csrfToken = response.data?.csrfToken || "";
+        return csrfToken;
+      })
+      .finally(() => { csrfPromise = null; });
+  }
+  return csrfPromise;
+}
 
 const processQueue = (error, token = null) => {
   failedQueue.forEach((prom) => {
@@ -28,13 +46,10 @@ const processQueue = (error, token = null) => {
 
 apiClient.interceptors.request.use(
   async (config) => {
-    const token = getAccessToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    delete config.headers.Authorization;
     const method = (config.method || "get").toLowerCase();
     if (!["get", "head", "options", "trace"].includes(method) && typeof document !== "undefined") {
-      const csrf = document.cookie.split("; ").find((row) => row.startsWith("csrftoken="))?.split("=")[1] || "";
+      const csrf = await getCsrfToken();
       if (csrf) config.headers["X-CSRFToken"] = decodeURIComponent(csrf);
     }
     return config;
@@ -53,38 +68,17 @@ apiClient.interceptors.response.use(
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
-          .then((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            return apiClient(originalRequest);
-          })
+          .then(() => apiClient(originalRequest))
           .catch((err) => Promise.reject(err));
       }
 
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = getRefreshToken();
-      if (!refreshToken) {
-        clearTokens();
-        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-          window.location.href = "/login";
-        }
-        return Promise.reject(error);
-      }
-
       try {
-        const { data } = await axios.post(`${BASE_URL}/auth/token/refresh/`, {
-          refresh: refreshToken,
-        });
+        await axios.post(`${BASE_URL}/auth/token/refresh/`, {}, { withCredentials: true });
 
-        const newAccessToken = data.access;
-        const newRefreshToken = data.refresh || refreshToken;
-
-        setTokens(newAccessToken, newRefreshToken);
-        apiClient.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-
-        processQueue(null, newAccessToken);
+        processQueue(null, true);
         return apiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);

@@ -13,7 +13,7 @@ const twoFactorApi = {
 
   // Public - login verification (no auth header needed)
   verifyLogin: ({ challenge_token, code }) =>
-    axios.post(`${apiBase}/auth/2fa/verify-login/`, { challenge_token, code }),
+    axios.post(`${apiBase}/auth/2fa/verify-login/`, { challenge_token, code }, { withCredentials: true }),
 };
 
 export default twoFactorApi;

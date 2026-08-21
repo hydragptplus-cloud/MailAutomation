@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { apiError } from "../utils/apiError";
 
 export function useApi(apiFunc, autoFetch = true, initialParams = {}) {
   const [data, setData] = useState(null);
@@ -14,12 +15,7 @@ export function useApi(apiFunc, autoFetch = true, initialParams = {}) {
         setData(response.data);
         return response.data;
       } catch (err) {
-        const errMsg =
-          err.response?.data?.detail ||
-          err.response?.data?.message ||
-          err.message ||
-          "An unexpected error occurred";
-        setError(errMsg);
+        setError(apiError(err, "An unexpected error occurred."));
         throw err;
       } finally {
         setLoading(false);

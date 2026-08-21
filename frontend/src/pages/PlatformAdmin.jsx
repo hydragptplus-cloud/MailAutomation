@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, CreditCard, LayoutDashboard, Megaphone, ShieldCheck, Tags, Users } from "lucide-react";
+import { Building2, CreditCard, LayoutDashboard, Megaphone, Settings, ShieldCheck, Tags, Users } from "lucide-react";
 
 const tabs = [
   ["/platform", "Overview", LayoutDashboard, true],
@@ -9,6 +9,7 @@ const tabs = [
   ["/platform/billing", "Billing & Payments", CreditCard],
   ["/platform/broadcasts", "Broadcasts", Megaphone],
   ["/platform/sessions", "Sessions & Security", ShieldCheck],
+  ["/platform/settings", "Settings", Settings],
 ];
 
 export default function PlatformAdmin() {

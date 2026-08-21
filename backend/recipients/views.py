@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -9,6 +11,9 @@ from .exporter import export_csv
 from .importer import import_recipients
 from .models import Recipient, RecipientList
 from .serializers import RecipientListSerializer, RecipientSerializer
+
+
+logger = logging.getLogger(__name__)
 
 
 class RecipientListViewSet(TenantViewSetMixin, viewsets.ModelViewSet):
@@ -65,10 +70,11 @@ class RecipientViewSet(TenantViewSetMixin, viewsets.ModelViewSet):
             )
         try:
             return Response(import_recipients(file_obj, recipient_list))
-        except (ValueError, UnicodeDecodeError) as exc:
-            return Response({"detail": str(exc)}, status=400)
-        except Exception as exc:
-            return Response({"detail": f"File processing failed: {exc}"}, status=400)
+        except (ValueError, UnicodeDecodeError):
+            return Response({"detail": "The import file could not be read. Check its format and column values."}, status=400)
+        except Exception:
+            logger.exception("Unexpected recipient import failure")
+            return Response({"detail": "The import could not be completed. Check the file and try again."}, status=400)
 
     @action(detail=False, methods=["get"])
     def export_file(self, request):

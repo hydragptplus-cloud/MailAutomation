@@ -4,9 +4,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from django.db.models import Q
+from django.conf import settings
 
 from common.plan_features import organization_mailbox_usage, organization_support_workspace_allowed
-from common.tenancy import is_owner, scope_queryset
 from .models import SupportMailbox, SupportTicket
 from .serializers import (
     PublicSupportTicketSerializer,
@@ -79,7 +80,16 @@ class SupportTicketViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         user = self.request.user
         if workspace_allowed(user):
-            return queryset if is_owner(user) else queryset.filter(organization=user.organization)
+            if user.role == "owner":
+                return queryset.filter(
+                    Q(source__in=("public", "authenticated"))
+                    | Q(mailbox__organization__isnull=True)
+                ).exclude(
+                    source="mailbox",
+                    subject__startswith="Support request MF-",
+                    email__iexact=settings.MAIL_FLOW_GENERAL_SENDER_EMAIL,
+                ).distinct()
+            return queryset.filter(organization=user.organization, mailbox__isnull=False)
         return queryset.filter(requester=user)
 
     def create(self, request, *args, **kwargs):
@@ -104,8 +114,12 @@ class SupportTicketViewSet(viewsets.ModelViewSet):
         serializer = SupportReplySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         mailbox = serializer.validated_data.get("mailbox")
-        if mailbox and not is_owner(request.user) and mailbox.organization_id != request.user.organization_id:
-            return Response({"detail": "Mailbox is not available for this organization."}, status=403)
+        if request.user.role == "owner" and mailbox is None:
+            return Response({"detail": "Select a platform support inbox before replying."}, status=400)
+        if mailbox:
+            expected_organization_id = None if request.user.role == "owner" else request.user.organization_id
+            if mailbox.organization_id != expected_organization_id:
+                return Response({"detail": "Mailbox is not available for this workspace."}, status=403)
         message = send_support_reply(ticket, serializer.validated_data["body"], actor=request.user, mailbox=mailbox)
         return Response(SupportTicketSerializer(message.ticket).data)
 
@@ -132,7 +146,9 @@ class SupportMailboxViewSet(viewsets.ModelViewSet):
         if not workspace_allowed(self.request.user):
             return SupportMailbox.objects.none()
         queryset = super().get_queryset()
-        return queryset if is_owner(self.request.user) else queryset.filter(organization=self.request.user.organization)
+        if self.request.user.role == "owner":
+            return queryset.filter(organization__isnull=True)
+        return queryset.filter(organization=self.request.user.organization)
 
     def create(self, request, *args, **kwargs):
         if not workspace_allowed(request.user):
@@ -150,4 +166,4 @@ class SupportMailboxViewSet(viewsets.ModelViewSet):
         try:
             return Response(sync_mailbox(mailbox))
         except Exception:
-            return Response({"detail": mailbox.last_error or "Mailbox sync failed."}, status=400)
+            return Response({"detail": "Mailbox sync failed. Check the mailbox connection settings and try again."}, status=400)

@@ -146,15 +146,15 @@ class FreeSignupView(APIView):
             user_agent=(request.META.get("HTTP_USER_AGENT", "")[:1000] if request else ""),
         )
 
-        return Response({
+        response = Response({
             "detail": "Your free account is ready.",
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
             "user": UserSerializer(user).data,
             "organization_id": organization.pk,
             "email": user.email,
             "login_url": "/login",
         }, status=status.HTTP_201_CREATED)
+        from users.views import _set_auth_cookies
+        return _set_auth_cookies(request, response, str(refresh.access_token), str(refresh))
 
 
 class CheckoutEmailStartView(CsrfProtectedAPIView):

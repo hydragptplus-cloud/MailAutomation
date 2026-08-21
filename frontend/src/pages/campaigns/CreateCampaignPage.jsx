@@ -21,6 +21,7 @@ import smtpApi from "../../services/smtpApi";
 import templatesApi from "../../services/templatesApi";
 import { useToast } from "../../hooks/useToast";
 import DateTimePicker from "../../components/common/DateTimePicker";
+import { apiError } from "../../utils/apiError";
 
 export default function CreateCampaignPage() {
   const navigate = useNavigate();
@@ -140,8 +141,7 @@ export default function CreateCampaignPage() {
 
       navigate("/campaigns");
     } catch (err) {
-      const detail = err.response?.data ? JSON.stringify(err.response.data) : "Failed to create campaign.";
-      toast.error(typeof detail === "string" ? detail : "Failed to create campaign.");
+      toast.error(apiError(err, "Failed to create campaign."));
     } finally {
       setSubmitting(false);
     }
