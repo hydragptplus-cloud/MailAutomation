@@ -285,6 +285,9 @@ class UserSerializer(serializers.ModelSerializer):
         user.is_superuser = user.role == User.Role.OWNER
         user.set_password(password) if password else user.set_unusable_password()
         user.save()
+        from billing.services import queue_account_created_email
+
+        transaction.on_commit(lambda: queue_account_created_email(user.pk))
         return user
 
     def update(self, instance, validated_data):

@@ -20,7 +20,7 @@ from .blockchain import VerificationError, inspect_bsc_wallet_transfer, verify_i
 from .models import PaymentInvoice, PaymentTransferLedger, Plan
 from .serializers import (
     AccountInvoiceCreateSerializer, CheckoutEmailStartSerializer, CheckoutEmailVerifySerializer,
-    FreeSignupSerializer, InvoiceCreateSerializer, InvoiceRecoverSerializer, InvoiceReplaceSerializer,
+    CustomInvoiceCreateSerializer, FreeSignupSerializer, InvoiceCreateSerializer, InvoiceRecoverSerializer, InvoiceReplaceSerializer,
     InvoiceSerializer, ManualReviewActionSerializer, PaymentTransferLedgerSerializer, PlanAdminSerializer,
     PlanSerializer, BscTransactionInspectSerializer, TransactionSubmissionSerializer,
 )
@@ -208,6 +208,46 @@ class InvoiceCreateView(CsrfProtectedAPIView):
 
     def post(self, request):
         serializer = InvoiceCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = cast(dict[str, Any], serializer.validated_data or {})
+        if not consume_precheckout_session(request, validated_data["email"]):
+            existing = None
+            idempotency_key = (validated_data.get("idempotency_key", "") or "").strip()[:96]
+            if idempotency_key:
+                existing = PaymentInvoice.objects.filter(
+                    normalized_customer_email=validated_data["email"],
+                    idempotency_key=idempotency_key,
+                    status__in=(PaymentInvoice.Status.PENDING, PaymentInvoice.Status.VERIFYING, PaymentInvoice.Status.EXPIRED),
+                ).order_by("-created_at").first()
+            if not existing:
+                from .services import normalized_org_name
+
+                existing = PaymentInvoice.objects.filter(
+                    normalized_customer_email=validated_data["email"],
+                    normalized_organization_name=normalized_org_name(validated_data["organization_name"]),
+                    status__in=(PaymentInvoice.Status.PENDING, PaymentInvoice.Status.VERIFYING),
+                    expires_at__gt=timezone.now(),
+                ).order_by("-created_at").first()
+            if not existing or not authorize_checkout_session(request, existing):
+                return Response({"detail": "Verify your email before creating a paid invoice."}, status=403)
+        invoice, token, created = serializer.save()
+        data = dict(InvoiceSerializer(invoice).data)
+        response = Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        response.delete_cookie(
+            _cookie_name(settings.PRECHECKOUT_SESSION_COOKIE_NAME),
+            path="/",
+            samesite=_checkout_cookie_samesite(),
+        )
+        return _set_checkout_cookie(response, token)
+
+
+class CustomInvoiceCreateView(CsrfProtectedAPIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "public_signup"
+
+    def post(self, request):
+        serializer = CustomInvoiceCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated_data = cast(dict[str, Any], serializer.validated_data or {})
         if not consume_precheckout_session(request, validated_data["email"]):

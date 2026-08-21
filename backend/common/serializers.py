@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from .models import BillingConfiguration, Organization, OrganizationUsage
+from .plan_features import organization_has_support_workspace_plan, organization_mailbox_usage
 from .quotas import usage_snapshot
 
 
@@ -11,6 +12,9 @@ class OrganizationSerializer(serializers.ModelSerializer):
     admin_count = serializers.SerializerMethodField()
     smtp_count = serializers.IntegerField(source="smtp_accounts.count", read_only=True)
     recipient_count = serializers.IntegerField(source="recipients.count", read_only=True)
+    mailbox_count = serializers.SerializerMethodField()
+    mail_connection_count = serializers.SerializerMethodField()
+    support_workspace_available = serializers.SerializerMethodField()
     usage = serializers.SerializerMethodField()
     subscription = serializers.SerializerMethodField()
 
@@ -66,6 +70,15 @@ class OrganizationSerializer(serializers.ModelSerializer):
 
     def get_admin_count(self, obj):
         return obj.users.filter(role="admin").count()
+
+    def get_mailbox_count(self, obj):
+        return organization_mailbox_usage(obj)["inbox_count"]
+
+    def get_mail_connection_count(self, obj):
+        return organization_mailbox_usage(obj)["used"]
+
+    def get_support_workspace_available(self, obj):
+        return organization_has_support_workspace_plan(obj)
 
     def get_subscription(self, obj):
         try:

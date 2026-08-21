@@ -15,6 +15,7 @@ class Organization(models.Model):
     max_admins = models.PositiveIntegerField(default=1)
     max_smtp_accounts = models.PositiveIntegerField(default=2)
     max_recipients = models.PositiveIntegerField(default=10000)
+    support_workspace_enabled = models.BooleanField(default=False)
     daily_email_limit = models.PositiveIntegerField(default=1000, help_text="Zero means no daily limit.")
     monthly_email_limit = models.PositiveIntegerField(default=30000)
     weekly_email_limit = models.PositiveIntegerField(default=0, help_text="Zero means no weekly limit.")

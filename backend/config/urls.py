@@ -22,6 +22,9 @@ urlpatterns = [
     path("api/", include("campaigns.urls")),
     path("api/", include("users.urls")),
     path("api/", include("common.urls")),
+    path("api/", include("support.urls")),
+    path("api/", include("platform_broadcasts.urls")),
+    path("api/", include("notifications.urls")),
     path("api/reports/", include("reports.urls")),
     path("api/billing/", include("billing.urls")),
 ]

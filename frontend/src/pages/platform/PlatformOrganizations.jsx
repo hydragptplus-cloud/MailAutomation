@@ -3,6 +3,7 @@ import {
   Check,
   Edit2,
   Key,
+  LifeBuoy,
   LogOut,
   Pencil,
   Plus,
@@ -173,6 +174,23 @@ export default function PlatformOrganizations() {
     }
   }
 
+  async function toggleSupportWorkspace(org) {
+    if (!org.support_workspace_available && !org.support_workspace_enabled) {
+      setError("Mail workspace is available only on Premium+ and Custom plans.");
+      return;
+    }
+    setError("");
+    try {
+      await api.post(`/organizations/${org.id}/toggle-support-workspace/`, {
+        enabled: !org.support_workspace_enabled,
+      });
+      setMessage(`Mail workspace ${org.support_workspace_enabled ? "hidden from" : "enabled for"} ${org.name}.`);
+      await load();
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || "Unable to update support workspace access.");
+    }
+  }
+
   async function createAdmin(event) {
     event.preventDefault();
     setSaving(true);
@@ -340,6 +358,7 @@ export default function PlatformOrganizations() {
               <th>Members</th>
               <th>SMTP</th>
               <th>Recipients</th>
+              <th>Support</th>
               <th>Monthly usage</th>
               <th className="text-right">Actions</th>
             </tr>
@@ -368,9 +387,26 @@ export default function PlatformOrganizations() {
                 </td>
                 <td>
                   {org.smtp_count}/{org.max_smtp_accounts}
+                  {org.mailbox_count ? (
+                    <span className="ml-1 text-xs text-slate-500" title="Support inboxes share the SMTP account limit">
+                      +{org.mailbox_count} inbox
+                    </span>
+                  ) : null}
                 </td>
                 <td>
                   {org.recipient_count}/{org.max_recipients}
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => toggleSupportWorkspace(org)}
+                    disabled={!org.support_workspace_available && !org.support_workspace_enabled}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${org.support_workspace_enabled ? "bg-emerald-500/10 text-emerald-300" : "bg-slate-800 text-slate-400"}`}
+                    title={!org.support_workspace_available ? "Premium+ and Custom plans only" : org.support_workspace_enabled ? "Hide mail workspace from organization admins" : "Enable mail workspace for organization admins"}
+                  >
+                    <LifeBuoy className="h-3.5 w-3.5" />
+                    {!org.support_workspace_available ? "Plan locked" : org.support_workspace_enabled ? "Enabled" : "Hidden"}
+                  </button>
                 </td>
                 <td>
                   {org.usage?.monthly_sent || 0}/{org.monthly_email_limit}
@@ -417,7 +453,7 @@ export default function PlatformOrganizations() {
 
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan="9" className="py-12 text-center text-slate-500">
+                <td colSpan="10" className="py-12 text-center text-slate-500">
                   No organizations match these filters.
                 </td>
               </tr>
@@ -425,7 +461,7 @@ export default function PlatformOrganizations() {
 
             {loading && (
               <tr>
-                <td colSpan="9" className="py-12 text-center text-slate-500">
+                <td colSpan="10" className="py-12 text-center text-slate-500">
                   Loading organizations…
                 </td>
               </tr>
@@ -781,7 +817,7 @@ function PlanSummary({ plan }) {
   const items = [
     `${plan.max_admins} administrators`,
     `${plan.max_users} users`,
-    `${plan.max_smtp_accounts} SMTP accounts`,
+    `${plan.max_smtp_accounts} SMTP accounts + support inboxes`,
     `${new Intl.NumberFormat().format(plan.max_recipients)} recipients`,
     `${new Intl.NumberFormat().format(plan.email_limit)} emails / 30 days`,
     `${plan.max_campaigns_per_day} campaigns / day`,

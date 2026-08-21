@@ -33,6 +33,23 @@ ACTIVE_INVOICE_STATUSES = (
     PaymentInvoice.Status.VERIFYING,
 )
 
+CUSTOM_PLAN_SLUG = "custom"
+PREMIUM_PLUS_PLAN_SLUG = "premium-plus"
+CUSTOM_AUTO_LIMITS = {
+    "email_limit": 1_000_000,
+    "max_admins": 25,
+    "max_users": 250,
+    "max_smtp_accounts": 40,
+    "max_recipients": 200_000,
+}
+CUSTOM_ADDON_PRICES = {
+    "email_10k": 120,
+    "admin": 150,
+    "user": 20,
+    "smtp_inbox": 300,
+    "recipient_10k": 100,
+}
+
 DECIMALS_BY_NETWORK = {
     "bsc": 18,
     "ethereum": 6,
@@ -394,7 +411,19 @@ def queue_invoice_email(invoice_id):
         pass
 
 
+def queue_account_created_email(user_id):
+    from .tasks import send_account_created_email
+
+    try:
+        cast(Any, send_account_created_email).delay(str(user_id))
+    except Exception:
+        pass
+
+
 def apply_plan_to_organization(organization, plan, *, activate=True):
+    plan_key = (plan.slug or "").strip().lower()
+    plan_name = (plan.name or "").strip().lower()
+    support_workspace_plan = plan_key in {"premium-plus", "custom"} or plan_name in {"premium+", "premium plus", "custom"}
     organization.max_admins = plan.max_admins
     organization.max_users = plan.max_users
     organization.max_smtp_accounts = plan.max_smtp_accounts
@@ -403,10 +432,35 @@ def apply_plan_to_organization(organization, plan, *, activate=True):
     organization.monthly_email_limit = plan.email_limit
     organization.max_recipients = plan.max_recipients
     organization.max_campaigns_per_day = plan.max_campaigns_per_day
+    if not support_workspace_plan:
+        organization.support_workspace_enabled = False
     update_fields = [
         "max_admins", "max_users", "max_smtp_accounts", "daily_email_limit",
         "weekly_email_limit", "monthly_email_limit", "max_recipients",
         "max_campaigns_per_day", "updated_at",
+    ]
+    if not support_workspace_plan:
+        update_fields.append("support_workspace_enabled")
+    if activate:
+        organization.status = Organization.Status.ACTIVE
+        update_fields.append("status")
+    organization.save(update_fields=update_fields)
+
+
+def apply_custom_limits_to_organization(organization, snapshot_limits, *, activate=True):
+    organization.max_admins = int(snapshot_limits["max_admins"])
+    organization.max_users = int(snapshot_limits["max_users"])
+    organization.max_smtp_accounts = int(snapshot_limits["max_smtp_accounts"])
+    organization.daily_email_limit = int(snapshot_limits.get("daily_email_limit", 0))
+    organization.weekly_email_limit = int(snapshot_limits.get("weekly_email_limit", 0))
+    organization.monthly_email_limit = int(snapshot_limits["email_limit"])
+    organization.max_recipients = int(snapshot_limits["max_recipients"])
+    organization.max_campaigns_per_day = int(snapshot_limits.get("max_campaigns_per_day", 10))
+    organization.support_workspace_enabled = True
+    update_fields = [
+        "max_admins", "max_users", "max_smtp_accounts", "daily_email_limit",
+        "weekly_email_limit", "monthly_email_limit", "max_recipients",
+        "max_campaigns_per_day", "support_workspace_enabled", "updated_at",
     ]
     if activate:
         organization.status = Organization.Status.ACTIVE
@@ -453,6 +507,10 @@ def _unique_username(email):
     return value
 
 
+def _is_custom_invoice(invoice):
+    return bool(getattr(invoice.plan, "slug", "") == CUSTOM_PLAN_SLUG and invoice.snapshot_limits.get("custom_plan"))
+
+
 def _create_customer(invoice_or_data, plan):
     email = invoice_or_data.customer_email if hasattr(invoice_or_data, "customer_email") else invoice_or_data["email"]
     name = invoice_or_data.customer_name if hasattr(invoice_or_data, "customer_name") else invoice_or_data["name"]
@@ -461,7 +519,10 @@ def _create_customer(invoice_or_data, plan):
     if User.objects.filter(email__iexact=email).exists():
         raise ValidationError({"email": "An account already exists with this email."})
     organization = Organization.objects.create(name=org_name)
-    apply_plan_to_organization(organization, plan)
+    if hasattr(invoice_or_data, "snapshot_limits") and invoice_or_data.snapshot_limits.get("custom_plan"):
+        apply_custom_limits_to_organization(organization, invoice_or_data.snapshot_limits)
+    else:
+        apply_plan_to_organization(organization, plan)
     user = User(
         username=_unique_username(email), email=email, name=name, first_name=name,
         role=cast(Any, User).Role.ADMIN, organization=organization, password=password_hash,
@@ -474,6 +535,7 @@ def _create_customer(invoice_or_data, plan):
         organization=organization, plan=plan, status=Subscription.Status.ACTIVE,
         current_period_start=now, current_period_end=now + timedelta(days=30),
     )
+    transaction.on_commit(lambda: queue_account_created_email(user.pk))
     return organization, user
 
 
@@ -514,11 +576,100 @@ def _quoted_amount(price_bdt, invoice_id, rate):
     return (base + suffix).quantize(Decimal("0.000001")), rate
 
 
-@transaction.atomic
-def create_invoice(validated_data):
-    idempotency_key = (validated_data.pop("idempotency_key", "") or "").strip()[:96]
-    customer_email = normalized_email(validated_data["customer_email"])
-    org_key = normalized_org_name(validated_data["organization_name"])
+def custom_pricing_preview(limits):
+    premium_plus = Plan.objects.get(slug=PREMIUM_PLUS_PLAN_SLUG, is_active=True, is_free=False)
+    custom_plan = Plan.objects.get(slug=CUSTOM_PLAN_SLUG, is_active=True, is_free=False)
+    minimums = {
+        "email_limit": premium_plus.email_limit,
+        "max_admins": premium_plus.max_admins,
+        "max_users": premium_plus.max_users,
+        "max_smtp_accounts": premium_plus.max_smtp_accounts,
+        "max_recipients": premium_plus.max_recipients,
+    }
+    clean_limits = {}
+    for key, minimum in minimums.items():
+        value = int(limits[key])
+        if value < minimum:
+            raise ValidationError({key: f"Minimum is {minimum}."})
+        if value > CUSTOM_AUTO_LIMITS[key]:
+            raise ValidationError({key: "This limit requires an admin quote."})
+        clean_limits[key] = value
+    premium_was = premium_plus.original_price_bdt or 0
+    premium_payable = premium_plus.price_bdt or premium_was
+    premium_has_discount = premium_plus.discount_percent > 0 and premium_was > premium_payable
+    base_price = premium_was if premium_has_discount else premium_payable
+    email_extra = max(0, ((clean_limits["email_limit"] - premium_plus.email_limit + 9999) // 10000)) * CUSTOM_ADDON_PRICES["email_10k"]
+    admin_extra = max(0, clean_limits["max_admins"] - premium_plus.max_admins) * CUSTOM_ADDON_PRICES["admin"]
+    user_extra = max(0, clean_limits["max_users"] - premium_plus.max_users) * CUSTOM_ADDON_PRICES["user"]
+    smtp_extra = max(0, clean_limits["max_smtp_accounts"] - premium_plus.max_smtp_accounts) * CUSTOM_ADDON_PRICES["smtp_inbox"]
+    recipient_extra = max(0, ((clean_limits["max_recipients"] - premium_plus.max_recipients + 9999) // 10000)) * CUSTOM_ADDON_PRICES["recipient_10k"]
+    extra_price = email_extra + admin_extra + user_extra + smtp_extra + recipient_extra
+    original_price = base_price + extra_price
+    discount_percent = custom_plan.discount_percent
+    payable_price = int((Decimal(original_price) * (Decimal(100) - Decimal(discount_percent)) / Decimal(100)).quantize(Decimal("1")))
+    snapshot = {
+        "custom_plan": True,
+        "base_plan_slug": premium_plus.slug,
+        "base_price_bdt": base_price,
+        "extra_price_bdt": extra_price,
+        "original_price_bdt": original_price,
+        "discount_percent": discount_percent,
+        "discount_amount_bdt": max(0, original_price - payable_price),
+        "payable_price_bdt": payable_price,
+        "pricing": {
+            "email_extra_bdt": email_extra,
+            "admin_extra_bdt": admin_extra,
+            "user_extra_bdt": user_extra,
+            "smtp_inbox_extra_bdt": smtp_extra,
+            "recipient_extra_bdt": recipient_extra,
+            "addon_prices": CUSTOM_ADDON_PRICES,
+        },
+        "email_limit": clean_limits["email_limit"],
+        "daily_email_limit": 0,
+        "weekly_email_limit": 0,
+        "max_admins": clean_limits["max_admins"],
+        "max_users": clean_limits["max_users"],
+        "max_smtp_accounts": clean_limits["max_smtp_accounts"],
+        "max_recipients": clean_limits["max_recipients"],
+        "max_campaigns_per_day": custom_plan.max_campaigns_per_day or premium_plus.max_campaigns_per_day,
+    }
+    return custom_plan, payable_price, snapshot
+
+
+def _populate_invoice_payment(invoice, network, billing_config):
+    invoice.receiving_address = {
+        "bsc": billing_config.payment_evm_wallet,
+        "ethereum": billing_config.payment_evm_wallet,
+        "tron": billing_config.payment_tron_wallet,
+        "ton": billing_config.payment_ton_wallet,
+    }[network]
+    invoice.token_contract = {
+        "bsc": settings.USDT_BSC_CONTRACT,
+        "ethereum": settings.USDT_ETH_CONTRACT,
+        "tron": settings.USDT_TRON_CONTRACT,
+        "ton": settings.USDT_TON_MASTER,
+    }[network]
+    invoice.token_decimals = DECIMALS_BY_NETWORK[network]
+
+
+def _reserve_unique_invoice_amount(invoice, billing_config):
+    for _ in range(20):
+        invoice.id = uuid.uuid4()
+        invoice.amount_usdt, invoice.usdt_bdt_rate = _quoted_amount(
+            invoice.price_bdt, invoice.id, billing_config.usdt_bdt_rate,
+        )
+        invoice.amount_raw = amount_to_raw(invoice.amount_usdt, invoice.token_decimals)
+        if not PaymentInvoice.objects.filter(
+            network=invoice.network, amount_usdt=invoice.amount_usdt,
+            status__in=(PaymentInvoice.Status.PENDING, PaymentInvoice.Status.VERIFYING),
+            expires_at__gt=timezone.now(),
+        ).exists():
+            return
+    raise ValidationError({"detail": "Could not allocate a unique payment amount. Please try again."})
+
+
+def _find_conflicting_invoice(validated_data, customer_email, org_key):
+    idempotency_key = (validated_data.get("idempotency_key", "") or "").strip()[:96]
     if idempotency_key:
         existing = PaymentInvoice.objects.select_for_update().filter(
             normalized_customer_email=customer_email,
@@ -526,13 +677,24 @@ def create_invoice(validated_data):
             status__in=ACTIVE_INVOICE_STATUSES + (PaymentInvoice.Status.EXPIRED,),
         ).order_by("-created_at").first()
         if existing:
-            return existing, create_checkout_session(existing), False
+            return existing, True
     active = PaymentInvoice.objects.select_for_update().filter(
         models.Q(normalized_customer_email=customer_email) | models.Q(normalized_organization_name=org_key),
         status__in=ACTIVE_INVOICE_STATUSES,
         expires_at__gt=timezone.now(),
     ).order_by("-created_at").first()
-    if active:
+    return active, False
+
+
+@transaction.atomic
+def create_invoice(validated_data):
+    idempotency_key = (validated_data.pop("idempotency_key", "") or "").strip()[:96]
+    customer_email = normalized_email(validated_data["customer_email"])
+    org_key = normalized_org_name(validated_data["organization_name"])
+    conflict, idempotent = _find_conflicting_invoice({"idempotency_key": idempotency_key}, customer_email, org_key)
+    if conflict and idempotent:
+        return conflict, create_checkout_session(conflict), False
+    if conflict:
         from .tasks import send_recovery_email
 
         try:
@@ -548,19 +710,7 @@ def create_invoice(validated_data):
     validated_data["normalized_organization_name"] = org_key
     invoice = PaymentInvoice(plan=plan, price_bdt=plan.price_bdt, expires_at=timezone.now() + timedelta(minutes=settings.PAYMENT_QUOTE_MINUTES), **validated_data)
     invoice.idempotency_key = idempotency_key
-    invoice.receiving_address = {
-        "bsc": billing_config.payment_evm_wallet,
-        "ethereum": billing_config.payment_evm_wallet,
-        "tron": billing_config.payment_tron_wallet,
-        "ton": billing_config.payment_ton_wallet,
-    }[network]
-    invoice.token_contract = {
-        "bsc": settings.USDT_BSC_CONTRACT,
-        "ethereum": settings.USDT_ETH_CONTRACT,
-        "tron": settings.USDT_TRON_CONTRACT,
-        "ton": settings.USDT_TON_MASTER,
-    }[network]
-    invoice.token_decimals = DECIMALS_BY_NETWORK[network]
+    _populate_invoice_payment(invoice, network, billing_config)
     invoice.snapshot_limits = {
         "email_limit": plan.email_limit,
         "daily_email_limit": plan.daily_email_limit,
@@ -571,20 +721,7 @@ def create_invoice(validated_data):
         "max_recipients": plan.max_recipients,
         "max_campaigns_per_day": plan.max_campaigns_per_day,
     }
-    for _ in range(20):
-        invoice.id = uuid.uuid4()
-        invoice.amount_usdt, invoice.usdt_bdt_rate = _quoted_amount(
-            plan.price_bdt, invoice.id, billing_config.usdt_bdt_rate,
-        )
-        invoice.amount_raw = amount_to_raw(invoice.amount_usdt, invoice.token_decimals)
-        if not PaymentInvoice.objects.filter(
-            network=network, amount_usdt=invoice.amount_usdt,
-            status__in=(PaymentInvoice.Status.PENDING, PaymentInvoice.Status.VERIFYING),
-            expires_at__gt=timezone.now(),
-        ).exists():
-            break
-    else:
-        raise ValidationError({"detail": "Could not allocate a unique payment amount. Please try again."})
+    _reserve_unique_invoice_amount(invoice, billing_config)
     try:
         invoice.save()
     except IntegrityError as exc:
@@ -596,11 +733,80 @@ def create_invoice(validated_data):
 
 
 @transaction.atomic
+def create_custom_invoice(validated_data):
+    idempotency_key = (validated_data.pop("idempotency_key", "") or "").strip()[:96]
+    limits = validated_data.pop("limits")
+    customer_email = normalized_email(validated_data["customer_email"])
+    org_key = normalized_org_name(validated_data["organization_name"])
+    conflict, idempotent = _find_conflicting_invoice({"idempotency_key": idempotency_key}, customer_email, org_key)
+    if conflict and idempotent:
+        return conflict, create_checkout_session(conflict), False
+    if conflict:
+        from .tasks import send_recovery_email
+
+        try:
+            cast(Any, send_recovery_email).delay(customer_email)
+        except Exception:
+            pass
+        raise InvoiceConflict("A pending invoice already exists for this email. We sent a secure recovery link if it can still be used.")
+    plan, price_bdt, snapshot_limits = custom_pricing_preview(limits)
+    network = validated_data["network"]
+    billing_config = get_runtime_billing_configuration()
+    validated_data["customer_email"] = customer_email
+    validated_data["normalized_customer_email"] = customer_email
+    validated_data["normalized_organization_name"] = org_key
+    invoice = PaymentInvoice(
+        plan=plan,
+        price_bdt=price_bdt,
+        expires_at=timezone.now() + timedelta(minutes=settings.PAYMENT_QUOTE_MINUTES),
+        **validated_data,
+    )
+    invoice.idempotency_key = idempotency_key
+    _populate_invoice_payment(invoice, network, billing_config)
+    invoice.snapshot_limits = snapshot_limits
+    _reserve_unique_invoice_amount(invoice, billing_config)
+    try:
+        invoice.save()
+    except IntegrityError as exc:
+        raise InvoiceConflict("A pending invoice already exists for this email or checkout request.") from exc
+    session_token = create_checkout_session(invoice)
+    audit_event("custom_invoice_created", invoice=invoice, metadata={"network": network, "plan": plan.slug, "limits": limits})
+    transaction.on_commit(lambda: queue_invoice_email(invoice.pk))
+    return invoice, session_token, True
+
+
+@transaction.atomic
 def replace_invoice(invoice, password_hash):
     if invoice.status == PaymentInvoice.Status.PAID:
         raise ValidationError({"detail": "This invoice has already been paid."})
     if invoice.status in {PaymentInvoice.Status.CANCELLED, PaymentInvoice.Status.REPLACED}:
         raise ValidationError({"detail": "This invoice is no longer active."})
+    if _is_custom_invoice(invoice):
+        data = {
+            "network": invoice.network,
+            "customer_name": invoice.customer_name,
+            "customer_email": invoice.customer_email,
+            "organization_name": invoice.organization_name,
+            "password_hash": password_hash,
+            "idempotency_key": f"replace:{invoice.pk}:{uuid.uuid4()}",
+            "limits": {
+                "email_limit": invoice.snapshot_limits["email_limit"],
+                "max_admins": invoice.snapshot_limits["max_admins"],
+                "max_users": invoice.snapshot_limits["max_users"],
+                "max_smtp_accounts": invoice.snapshot_limits["max_smtp_accounts"],
+                "max_recipients": invoice.snapshot_limits["max_recipients"],
+            },
+        }
+        invoice.status = PaymentInvoice.Status.REPLACED
+        invoice.replaced_at = timezone.now()
+        invoice.save(update_fields=("status", "replaced_at", "updated_at"))
+        revoke_invoice_access(invoice)
+        new_invoice, token, _ = create_custom_invoice(data)
+        invoice.password_hash = ""
+        invoice.replaced_by = new_invoice
+        invoice.save(update_fields=("password_hash", "replaced_by", "updated_at"))
+        return new_invoice, token
+
     data = {
         "plan_slug": invoice.plan.slug,
         "network": invoice.network,
@@ -764,7 +970,10 @@ def fulfill_paid_invoice(invoice_id, transfer):
     invoice_obj = cast(Any, invoice)
     if invoice_obj.organization_id:
         organization = invoice_obj.organization
-        apply_plan_to_organization(organization, invoice_obj.plan)
+        if _is_custom_invoice(invoice_obj):
+            apply_custom_limits_to_organization(organization, invoice_obj.snapshot_limits)
+        else:
+            apply_plan_to_organization(organization, invoice_obj.plan)
         now = timezone.now()
         subscription, created = Subscription.objects.get_or_create(
             organization=organization,

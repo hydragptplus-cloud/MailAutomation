@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Menu, LogOut, LogIn, UserCheck } from "lucide-react";
 import { clearTokens, isAuthenticated, getUser } from "../utils/auth";
 import api from "../services/api";
+import NotificationBell from "./notifications/NotificationBell";
 
 export default function Navbar({ onToggleMobileMenu }) {
   const navigate = useNavigate();
@@ -43,6 +44,8 @@ export default function Navbar({ onToggleMobileMenu }) {
       </div>
 
       <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+        {auth && <NotificationBell />}
+
         <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-slate-800/60 border border-slate-700/50 rounded-full text-xs text-slate-300">
           <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
           <span>{user?.username || "Admin"}</span>

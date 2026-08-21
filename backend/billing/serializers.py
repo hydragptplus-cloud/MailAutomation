@@ -131,6 +131,46 @@ class InvoiceCreateSerializer(RegistrationFieldsSerializer):
         })
 
 
+class CustomLimitsSerializer(serializers.Serializer):
+    email_limit = serializers.IntegerField(min_value=1)
+    max_admins = serializers.IntegerField(min_value=1)
+    max_users = serializers.IntegerField(min_value=1)
+    max_smtp_accounts = serializers.IntegerField(min_value=1)
+    max_recipients = serializers.IntegerField(min_value=1)
+
+
+class CustomInvoiceCreateSerializer(RegistrationFieldsSerializer):
+    network = serializers.ChoiceField(choices=PaymentInvoice.Network.choices)
+    idempotency_key = serializers.CharField(max_length=96, required=False, allow_blank=True)
+    limits = CustomLimitsSerializer()
+
+    def validate_network(self, value):
+        return validate_network_enabled(value)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        from .services import custom_pricing_preview
+
+        try:
+            custom_pricing_preview(attrs["limits"])
+        except Plan.DoesNotExist as exc:
+            raise serializers.ValidationError({"detail": "Custom checkout is not configured yet."}) from exc
+        return attrs
+
+    def create(self, validated_data):
+        from .services import create_custom_invoice
+
+        return create_custom_invoice({
+            "network": validated_data["network"],
+            "customer_name": validated_data["name"],
+            "customer_email": validated_data["email"],
+            "organization_name": validated_data["organization_name"],
+            "password_hash": validated_data["password_hash"],
+            "idempotency_key": validated_data.get("idempotency_key", ""),
+            "limits": validated_data["limits"],
+        })
+
+
 class AccountInvoiceCreateSerializer(serializers.Serializer):
     plan_slug = serializers.SlugField()
     network = serializers.ChoiceField(choices=PaymentInvoice.Network.choices)
@@ -171,7 +211,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         fields = (
             "id", "plan", "network", "receiving_address", "token_contract", "price_bdt",
             "usdt_bdt_rate", "amount_usdt", "status", "transaction_hash", "verification_error",
-            "expires_at", "verified_at", "created_at", "explorer_url", "replaced_by",
+            "expires_at", "verified_at", "created_at", "explorer_url", "replaced_by", "snapshot_limits",
             "invoice_email_sent_at", "invoice_email_error", "recovery_email_sent_at",
             "recovery_email_error", "confirmation_email_sent_at", "confirmation_email_error",
             "manual_review_email_sent_at", "manual_review_email_error",

@@ -33,6 +33,7 @@ export const createFreeAccount = (payload) => publicClient.post("/billing/signup
 export const startCheckoutEmail = (email, turnstileToken = "") => publicClient.post("/billing/checkout/email/start/", { email, turnstile_token: turnstileToken }).then((response) => response.data);
 export const verifyCheckoutEmail = (email, code) => publicClient.post("/billing/checkout/email/verify/", { email, code }).then((response) => response.data);
 export const createInvoice = (payload) => publicClient.post("/billing/invoices/", payload).then((response) => response.data);
+export const createCustomInvoice = (payload) => publicClient.post("/billing/custom-invoices/", payload).then((response) => response.data);
 export const createAccountInvoice = (payload) => apiClient.post("/billing/account/invoices/", payload).then((response) => response.data);
 export const exchangeInvoiceCode = (id, code) => publicClient.post(`/billing/invoices/${id}/session/`, { code }).then((response) => response.data);
 export const getInvoice = (id) => publicClient.get(`/billing/invoices/${id}/`).then((response) => response.data);

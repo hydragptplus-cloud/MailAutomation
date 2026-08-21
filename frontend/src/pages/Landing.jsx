@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -19,6 +19,7 @@ import {
   Zap,
   Radio,
   Calendar,
+  SlidersHorizontal,
 } from "lucide-react";
 import { apiError, getPlans, getPublicMonitorStats, recoverInvoice } from "../services/billingApi";
 
@@ -76,6 +77,10 @@ export default function Landing() {
   const [recoveryEmail, setRecoveryEmail] = useState("");
   const [recoveryNotice, setRecoveryNotice] = useState("");
   const [recovering, setRecovering] = useState(false);
+  const recoveryResetTimer = useRef(null);
+  const premiumPlusPlan = plans.find((plan) => plan.slug === "premium-plus") || plans.find((plan) => plan.name?.toLowerCase() === "premium+");
+  const customPlan = plans.find((plan) => plan.slug === "custom");
+  const visibleFixedPlans = plans.filter((plan) => plan.slug !== "custom");
 
   useEffect(() => {
     getPlans()
@@ -97,14 +102,27 @@ export default function Landing() {
       .finally(() => setLoadingMonitor(false));
   }, []);
 
+  useEffect(() => () => {
+    if (recoveryResetTimer.current) clearTimeout(recoveryResetTimer.current);
+  }, []);
+
   async function recover(event) {
     event.preventDefault();
+    if (recoveryResetTimer.current) {
+      clearTimeout(recoveryResetTimer.current);
+      recoveryResetTimer.current = null;
+    }
     setRecovering(true);
     setRecoveryNotice("");
     try {
       const response = await recoverInvoice(recoveryEmail);
       setRecoveryNotice({ text: response.detail, error: false });
       setRecoveryEmail("");
+      recoveryResetTimer.current = setTimeout(() => {
+        setRecoveryNotice("");
+        setRecoveryEmail("");
+        recoveryResetTimer.current = null;
+      }, 5000);
     } catch (err) {
       setRecoveryNotice({ text: apiError(err), error: true });
     } finally {
@@ -151,6 +169,9 @@ export default function Landing() {
             <a href="#security" className="hover:text-white transition-colors duration-200">
               Security
             </a>
+            <Link to="/help" className="hover:text-white transition-colors duration-200">
+              Help
+            </Link>
           </nav>
 
           <div className="hidden md:flex items-center gap-4">
@@ -188,6 +209,9 @@ export default function Landing() {
             <a href="#security" onClick={() => setMobileOpen(false)} className="py-1 hover:text-indigo-400">
               Security
             </a>
+            <Link to="/help" onClick={() => setMobileOpen(false)} className="py-1 hover:text-indigo-400">
+              Help & Support
+            </Link>
             <div className="pt-3 border-t border-white/10 flex flex-col gap-2.5">
               <Link
                 to="/login"
@@ -365,11 +389,10 @@ export default function Landing() {
                             key={bar.date || i}
                             type="button"
                             onClick={() => setSelectedBarIndex(isSelected ? null : i)}
-                            className={`flex-1 rounded-t transition-all duration-300 relative group cursor-pointer focus:outline-none ${
-                              isSelected
+                            className={`flex-1 rounded-t transition-all duration-300 relative group cursor-pointer focus:outline-none ${isSelected
                                 ? "bg-gradient-to-t from-cyan-500 via-sky-400 to-white shadow-lg shadow-cyan-500/50 scale-y-105"
                                 : "bg-gradient-to-t from-indigo-600/40 via-indigo-400 to-cyan-300 hover:brightness-125"
-                            }`}
+                              }`}
                             style={{
                               height: `${bar.percentage || 25}%`,
                               opacity: isSelected ? 1 : 0.5 + (i * 0.04),
@@ -463,120 +486,125 @@ export default function Landing() {
           )}
 
           {/* Pricing Skeleton / List */}
-          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-6 mt-14">
+          <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-6 mt-14">
             {loadingPlans
-              ? Array.from({ length: 4 }).map((_, i) => (
+              ? Array.from({ length: 5 }).map((_, i) => (
                 <div
                   key={i}
                   className="h-96 rounded-3xl border border-white/5 bg-slate-900/30 p-6 animate-pulse"
                 />
-              )) : plans.map((plan) => {
-                const featured = plan.slug === "premium";
-                const isPlanFree = Boolean(plan.is_free || (plan.price_bdt === 0 && !plan.original_price_bdt) || plan.slug === "free");
-                return (
-                  <article
-                    key={plan.slug}
-                    className={`relative rounded-3xl p-7 border flex flex-col justify-between transition-all duration-200 ${featured
-                      ? "border-indigo-500/60 bg-indigo-950/20 shadow-2xl shadow-indigo-950/60 hover:border-indigo-400"
-                      : "border-white/[0.08] bg-slate-900/40 hover:border-white/20 hover:bg-slate-900/70"
-                      }`}
-                  >
-                    {featured && (
-                      <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-lg shadow-indigo-500/20 z-20">
-                        Recommended
-                      </span>
-                    )}
+              )) : (
+                <>
+                  {visibleFixedPlans.map((plan) => {
+                    const featured = plan.slug === "premium";
+                    const isPlanFree = Boolean(plan.is_free || (plan.price_bdt === 0 && !plan.original_price_bdt) || plan.slug === "free");
+                    return (
+                      <article
+                        key={plan.slug}
+                        className={`relative rounded-3xl p-7 border flex flex-col justify-between transition-all duration-200 ${featured
+                          ? "border-indigo-500/60 bg-indigo-950/20 shadow-2xl shadow-indigo-950/60 hover:border-indigo-400"
+                          : "border-white/[0.08] bg-slate-900/40 hover:border-white/20 hover:bg-slate-900/70"
+                          }`}
+                      >
+                        {featured && (
+                          <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-lg shadow-indigo-500/20 z-20">
+                            Recommended
+                          </span>
+                        )}
 
-                    {plan.discount_percent > 0 && !isPlanFree && (
-                      <div className="absolute top-0 right-0 w-28 h-28 overflow-hidden rounded-tr-[23px] pointer-events-none z-10">
-                        <div className="absolute transform rotate-45 bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black text-[10px] py-1 text-center w-36 top-5 -right-8 shadow-md uppercase tracking-wider">
-                          {plan.discount_percent}% OFF
-                        </div>
-                      </div>
-                    )}
-
-                    <div>
-                      <h3 className="text-lg font-bold text-white tracking-tight">{plan.name}</h3>
-
-                      <div className="mt-5 flex items-baseline justify-between gap-3">
-                        {plan.discount_percent > 0 && !isPlanFree ? (
-                          <div className="flex flex-col">
-                            <span className="line-through text-xs font-semibold text-slate-400">
-                              ৳{format(plan.original_price_bdt || plan.price_bdt)}
-                            </span>
-                            <div className="flex items-baseline gap-1">
-                              <strong className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-                                ৳{format(plan.price_bdt)}
-                              </strong>
-                              <span className="text-slate-400 text-xs font-medium">/ 30d</span>
+                        {plan.discount_percent > 0 && !isPlanFree && (
+                          <div className="absolute top-0 right-0 w-28 h-28 overflow-hidden rounded-tr-[23px] pointer-events-none z-10">
+                            <div className="absolute transform rotate-45 bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black text-[10px] py-1 text-center w-36 top-5 -right-8 shadow-md uppercase tracking-wider">
+                              {plan.discount_percent}% OFF
                             </div>
                           </div>
-                        ) : (
-                          <div className="flex items-baseline gap-1">
-                            <strong className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-                              {isPlanFree ? "Free" : `৳${format(plan.price_bdt)}`}
-                            </strong>
-                            {!isPlanFree && (
-                              <span className="text-slate-400 text-xs font-medium">/ 30d</span>
+                        )}
+
+                        <div>
+                          <h3 className="text-lg font-bold text-white tracking-tight">{plan.name}</h3>
+
+                          <div className="mt-5 flex items-baseline justify-between gap-3">
+                            {plan.discount_percent > 0 && !isPlanFree ? (
+                              <div className="flex flex-col">
+                                <span className="line-through text-xs font-semibold text-slate-400">
+                                  ৳{format(plan.original_price_bdt || plan.price_bdt)}
+                                </span>
+                                <div className="flex items-baseline gap-1">
+                                  <strong className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+                                    ৳{format(plan.price_bdt)}
+                                  </strong>
+                                  <span className="text-slate-400 text-xs font-medium">/ 30d</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-baseline gap-1">
+                                <strong className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+                                  {isPlanFree ? "Free" : `৳${format(plan.price_bdt)}`}
+                                </strong>
+                                {!isPlanFree && (
+                                  <span className="text-slate-400 text-xs font-medium">/ 30d</span>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
 
-                      <div className="text-xs text-slate-300 mt-4 pb-4 border-b border-white/[0.08]">
-                        <strong className="text-white font-semibold text-sm">
-                          {format(plan.email_limit)}
-                        </strong>{" "}
-                        emails included
-                      </div>
+                          <div className="text-xs text-slate-300 mt-4 pb-4 border-b border-white/[0.08]">
+                            <strong className="text-white font-semibold text-sm">
+                              {format(plan.email_limit)}
+                            </strong>{" "}
+                            emails included
+                          </div>
 
-                      <ul className="space-y-3.5 mt-5 text-xs text-slate-300">
-                        <li className="flex items-center gap-2.5">
-                          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span>
-                            {plan.daily_email_limit
-                              ? `${format(plan.daily_email_limit)} emails/day`
-                              : plan.weekly_email_limit
-                                ? `${format(plan.weekly_email_limit)} emails/week`
-                                : "Full monthly bucket"}
-                          </span>
-                        </li>
-                        <li className="flex items-center gap-2.5">
-                          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span>
-                            {plan.max_admins} admin{plan.max_admins > 1 ? "s" : ""} +{" "}
-                            {plan.max_users} member{plan.max_users > 1 ? "s" : ""}
-                          </span>
-                        </li>
-                        <li className="flex items-center gap-2.5">
-                          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span>
-                            {plan.max_smtp_accounts} SMTP account
-                            {plan.max_smtp_accounts > 1 ? "s" : ""}
-                          </span>
-                        </li>
-                      </ul>
-                    </div>
+                          <ul className="space-y-3.5 mt-5 text-xs text-slate-300">
+                            <li className="flex items-center gap-2.5">
+                              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span>
+                                {plan.daily_email_limit
+                                  ? `${format(plan.daily_email_limit)} emails/day`
+                                  : plan.weekly_email_limit
+                                    ? `${format(plan.weekly_email_limit)} emails/week`
+                                    : "Full monthly bucket"}
+                              </span>
+                            </li>
+                            <li className="flex items-center gap-2.5">
+                              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span>
+                                {plan.max_admins} admin{plan.max_admins > 1 ? "s" : ""} +{" "}
+                                {plan.max_users} member{plan.max_users > 1 ? "s" : ""}
+                              </span>
+                            </li>
+                            <li className="flex items-center gap-2.5">
+                              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span>
+                                {plan.max_smtp_accounts} SMTP account
+                                {plan.max_smtp_accounts > 1 ? "s" : ""}
+                              </span>
+                            </li>
+                          </ul>
+                        </div>
 
-                    <button
-                      onClick={() => {
-                        if (isPlanFree) {
-                          navigate("/register");
-                        } else {
-                          navigate(`/subscribe/${plan.slug}`);
-                        }
-                      }}
-                      className={`mt-8 w-full rounded-xl py-3 px-4 text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 active:scale-95 ${featured
-                        ? "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25"
-                        : "bg-white/10 hover:bg-white/20 text-white"
-                        }`}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                      <span>{isPlanFree ? "Create free account" : "Subscribe with USDT"}</span>
-                    </button>
-                  </article>
-                );
-              })}
+                        <button
+                          onClick={() => {
+                            if (isPlanFree) {
+                              navigate("/register");
+                            } else {
+                              navigate(`/subscribe/${plan.slug}`);
+                            }
+                          }}
+                          className={`mt-8 w-full rounded-xl py-3 px-4 text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 active:scale-95 ${featured
+                            ? "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25"
+                            : "bg-white/10 hover:bg-white/20 text-white"
+                            }`}
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                          <span>{isPlanFree ? "Create free account" : "Subscribe with USDT"}</span>
+                        </button>
+                      </article>
+                    );
+                  })}
+                  <CustomPlanCard basePlan={premiumPlusPlan} customPlan={customPlan} />
+                </>
+              )}
           </div>
         </section>
 
@@ -646,9 +674,173 @@ export default function Landing() {
       <footer className="relative z-10 border-t border-white/5 bg-[#060911]/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-5 lg:px-8 py-8 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-500">
           <span>© 2026 Mail Flow. All rights reserved.</span>
-          <span>Reliable infrastructure for responsible email delivery.</span>
+          <Link to="/help" className="hover:text-slate-300">Help & Support</Link>
         </div>
       </footer>
     </div>
+  );
+}
+
+function applyDiscount(originalPrice, discountPercent) {
+  const discount = Math.min(Math.max(Number(discountPercent || 0), 0), 100);
+  return Math.round(Number(originalPrice || 0) * (1 - discount / 100));
+}
+
+function CustomPlanCard({ basePlan, customPlan }) {
+  const [emails, setEmails] = useState(300000);
+  const [admins, setAdmins] = useState(8);
+  const [users, setUsers] = useState(80);
+  const [connections, setConnections] = useState(15);
+  const [recipients, setRecipients] = useState(50000);
+
+  const premiumWasPrice = Number(basePlan?.original_price_bdt || 0);
+  const premiumPayablePrice = Number(basePlan?.price_bdt || premiumWasPrice || 0);
+  const premiumDiscountPercent = Number(basePlan?.discount_percent || 0);
+  const premiumHasDiscount = premiumDiscountPercent > 0 && premiumWasPrice > premiumPayablePrice;
+  const baseOriginal = premiumHasDiscount ? premiumWasPrice : premiumPayablePrice;
+  const customDiscountPercent = Number(customPlan?.discount_percent || 0);
+  const baseEmails = Number(basePlan?.email_limit || 150000);
+  const baseAdmins = Number(basePlan?.max_admins || 5);
+  const baseUsers = Number(basePlan?.max_users || 50);
+  const baseConnections = Number(basePlan?.max_smtp_accounts || 10);
+  const baseRecipients = Number(basePlan?.max_recipients || 10000);
+
+  const emailExtra = Math.max(0, Math.ceil((emails - baseEmails) / 10000)) * 120;
+  const adminExtra = Math.max(0, admins - baseAdmins) * 150;
+  const userExtra = Math.max(0, users - baseUsers) * 20;
+  const connectionExtra = Math.max(0, connections - baseConnections) * 300;
+  const recipientExtra = Math.max(0, Math.ceil((recipients - baseRecipients) / 10000)) * 100;
+  const extraOriginal = emailExtra + adminExtra + userExtra + connectionExtra + recipientExtra;
+  const estimatedOriginal = baseOriginal + extraOriginal;
+  const estimatedPayable = applyDiscount(estimatedOriginal, customDiscountPercent);
+  const discountAmount = Math.max(0, estimatedOriginal - estimatedPayable);
+  const needsQuote = emails > 1000000 || connections > 40 || users > 250 || admins > 25;
+  const customParams = new URLSearchParams({
+    emails: String(emails),
+    admins: String(admins),
+    users: String(users),
+    connections: String(connections),
+    recipients: String(recipients),
+  });
+  const quoteMessage = [
+    "I want a Custom Mail Flow plan.",
+    "",
+    `Monthly emails: ${format(emails)}`,
+    `Admins: ${format(admins)}`,
+    `Users: ${format(users)}`,
+    `SMTP + inboxes: ${format(connections)}`,
+    `Recipients: ${format(recipients)}`,
+    `Estimated price: ${needsQuote ? "Custom quote" : `৳${format(estimatedPayable)} / 30 days`}`,
+  ].join("\n");
+
+  return (
+    <article className="relative rounded-3xl p-7 border border-cyan-400/40 bg-cyan-950/10 flex flex-col justify-between shadow-2xl shadow-cyan-950/30">
+      {customDiscountPercent > 0 && (
+        <div className="absolute top-0 right-0 w-28 h-28 overflow-hidden rounded-tr-[23px] pointer-events-none z-10">
+          <div className="absolute transform rotate-45 bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black text-[10px] py-1 text-center w-36 top-5 -right-8 shadow-md uppercase tracking-wider">
+            {customDiscountPercent}% OFF
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="w-9 h-9 rounded-xl bg-cyan-400/10 border border-cyan-300/20 grid place-items-center text-cyan-300">
+            <SlidersHorizontal className="w-4 h-4" />
+          </span>
+          <h3 className="text-lg font-bold text-white tracking-tight">Custom</h3>
+        </div>
+
+        <div className="mt-5">
+          {customDiscountPercent > 0 && (
+            <span className="line-through text-xs font-semibold text-slate-400">
+              ৳{format(estimatedOriginal)}
+            </span>
+          )}
+          <div className="flex items-baseline gap-1">
+            <strong className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+              {needsQuote ? "Custom quote" : `৳${format(estimatedPayable)}`}
+            </strong>
+            {!needsQuote && <span className="text-slate-400 text-xs font-medium">/ 30d</span>}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Starts from Premium+ {premiumHasDiscount ? "was price" : "payable price"}: ৳{format(baseOriginal)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {customDiscountPercent > 0 ? `${customDiscountPercent}% Custom discount applied.` : "Custom discount is separate from Premium+."}
+          </p>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-white/[0.08] bg-slate-950/45 p-4 text-xs">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-slate-400">Premium+ base</span>
+            <strong className="text-slate-100">৳{format(baseOriginal)}</strong>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <span className="text-slate-400">Selected extra capacity</span>
+            <strong className="text-cyan-200">+৳{format(extraOriginal)}</strong>
+          </div>
+          {customDiscountPercent > 0 && (
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <span className="text-slate-400">Custom discount</span>
+              <strong className="text-emerald-300">-৳{format(discountAmount)}</strong>
+            </div>
+          )}
+          {!needsQuote && (
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/[0.08] pt-3">
+              <span className="font-semibold text-slate-300">Payable</span>
+              <strong className="text-white">৳{format(estimatedPayable)}</strong>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 space-y-4">
+          <Range label="Monthly emails" value={emails} min={baseEmails} max={1200000} step={10000} onChange={setEmails} suffix="" />
+          <Range label="Admins" value={admins} min={baseAdmins} max={30} step={1} onChange={setAdmins} suffix="" />
+          <Range label="Users" value={users} min={baseUsers} max={300} step={5} onChange={setUsers} suffix="" />
+          <Range label="SMTP + inboxes" value={connections} min={baseConnections} max={50} step={1} onChange={setConnections} suffix="" />
+          <Range label="Recipients" value={recipients} min={baseRecipients} max={200000} step={10000} onChange={setRecipients} suffix="" />
+        </div>
+
+        <ul className="space-y-3 mt-5 text-xs text-slate-300">
+          <li className="flex items-center gap-2.5">
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>Mail Workspace included</span>
+          </li>
+          <li className="flex items-center gap-2.5">
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{needsQuote ? "Admin approval for high scale" : "Extra 10k emails from ৳120"}</span>
+          </li>
+        </ul>
+      </div>
+
+      <Link
+        to={needsQuote ? `/help?subject=${encodeURIComponent("Custom plan request")}&message=${encodeURIComponent(quoteMessage)}` : `/subscribe/custom?${customParams.toString()}`}
+        className={`mt-8 w-full rounded-xl py-3 px-4 text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 active:scale-95 ${needsQuote ? "border border-cyan-300/30 text-cyan-200 hover:bg-cyan-400/10" : "bg-cyan-400 text-slate-950 hover:bg-cyan-300"}`}
+      >
+        <ChevronRight className="w-4 h-4" />
+        <span>{needsQuote ? "Request custom quote" : "Continue checkout"}</span>
+      </Link>
+    </article>
+  );
+}
+
+function Range({ label, value, min, max, step, onChange }) {
+  return (
+    <label className="block">
+      <span className="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-400">
+        <span>{label}</span>
+        <span className="text-cyan-200">{format(value)}</span>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="mt-2 w-full accent-cyan-400"
+      />
+    </label>
   );
 }

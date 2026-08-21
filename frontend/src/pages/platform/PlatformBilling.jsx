@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, CircleDollarSign, KeyRound, Loader2, Radio, Search, Save, Wallet } from "lucide-react";
 import api from "../../services/api";
+import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const emptyBilling = {
   usdt_bdt_rate: "", payment_evm_wallet: "", payment_tron_wallet: "", payment_ton_wallet: "",
@@ -19,6 +20,7 @@ export default function PlatformBilling() {
   const [bscResult, setBscResult] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [confirmWalletSave, setConfirmWalletSave] = useState(false);
 
   useEffect(() => {
     api.get("/platform/billing-configuration/").then((response) => {
@@ -31,7 +33,14 @@ export default function PlatformBilling() {
   async function save(event) {
     event.preventDefault(); setMessage(""); setError("");
     const walletsChanged = ["payment_evm_wallet", "payment_tron_wallet", "payment_ton_wallet"].some((key) => billing[key] !== original[key]);
-    if (walletsChanged && !window.confirm("Change receiving wallets? New invoices will use the new addresses immediately.")) return;
+    if (walletsChanged) {
+      setConfirmWalletSave(true);
+      return;
+    }
+    await persistBillingConfiguration();
+  }
+
+  async function persistBillingConfiguration() {
     setSaving(true);
     const payload = {
       usdt_bdt_rate: billing.usdt_bdt_rate,
@@ -65,7 +74,8 @@ export default function PlatformBilling() {
   }
 
   if (loading) return <div className="py-16 text-center text-sm text-slate-500">Loading billing configuration…</div>;
-  return <form onSubmit={save} className="space-y-8 max-w-5xl">
+  return <>
+  <form onSubmit={save} className="space-y-8 max-w-5xl">
     <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4"><div><h2 className="text-lg font-semibold">Billing & Payments</h2><p className="text-sm text-slate-500 mt-1">Control quote conversion, receiving wallets, and blockchain provider access.</p></div><button disabled={saving} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-indigo-600 text-sm font-semibold disabled:opacity-50"><Save className="w-4 h-4" />{saving ? "Saving…" : "Save changes"}</button></div>
     {message && <Notice>{message}</Notice>}{error && <Notice error>{error}</Notice>}
 
@@ -97,7 +107,21 @@ export default function PlatformBilling() {
     </Section>
 
     {(billing.updated_at || billing.updated_by_email) && <p className="text-xs text-slate-600">Last updated {billing.updated_at ? new Date(billing.updated_at).toLocaleString() : ""}{billing.updated_by_email ? ` by ${billing.updated_by_email}` : ""}</p>}
-  </form>;
+  </form>
+  <ConfirmDialog
+    isOpen={confirmWalletSave}
+    title="Change receiving wallets"
+    message="New invoices will use the new receiving addresses immediately. Existing invoices keep their original wallet snapshots."
+    confirmLabel="Save wallet changes"
+    isDanger={false}
+    loading={saving}
+    onCancel={() => setConfirmWalletSave(false)}
+    onConfirm={async () => {
+      setConfirmWalletSave(false);
+      await persistBillingConfiguration();
+    }}
+  />
+  </>;
 }
 
 function Section({ icon: Icon, title, description, children }) { return <section className="border-t border-slate-800 pt-6"><div className="grid lg:grid-cols-[240px_1fr] gap-5"><div><Icon className="w-5 h-5 text-indigo-300" /><h3 className="font-semibold mt-3">{title}</h3><p className="text-xs leading-5 text-slate-500 mt-1">{description}</p></div><div>{children}</div></div></section>; }

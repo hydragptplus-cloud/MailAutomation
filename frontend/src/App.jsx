@@ -27,6 +27,7 @@ import PlatformAdmin from "./pages/PlatformAdmin";
 import PlatformOverview from "./pages/platform/PlatformOverview";
 import PlatformOrganizations from "./pages/platform/PlatformOrganizations";
 import PlatformBilling from "./pages/platform/PlatformBilling";
+import PlatformBroadcasts from "./pages/platform/PlatformBroadcasts";
 import PlatformSessions from "./pages/platform/PlatformSessions";
 import PlatformUsers from "./pages/platform/PlatformUsers";
 import PlatformPlans from "./pages/platform/PlatformPlans";
@@ -35,6 +36,9 @@ import Landing from "./pages/Landing";
 import Register from "./pages/Register";
 import Subscribe from "./pages/Subscribe";
 import Payment from "./pages/Payment";
+import HelpSupport from "./pages/HelpSupport";
+import MailWorkspace from "./pages/MailWorkspace";
+import NotificationsPage from "./pages/NotificationsPage";
 
 import { getUser, isAuthenticated } from "./utils/auth";
 import { ToastProvider } from "./context/ToastContext";
@@ -52,6 +56,7 @@ const router = createBrowserRouter([
   { path: "/signup", element: <Register /> },
   { path: "/subscribe/:planSlug", element: <Subscribe /> },
   { path: "/payment/:invoiceId", element: <Payment /> },
+  { path: "/help", element: <HelpSupport /> },
   {
     element: <AppLayout />,
     children: [
@@ -71,6 +76,10 @@ const router = createBrowserRouter([
       { path: "/reports", element: <ProtectedRoute element={<ReportsPage />} /> },
       { path: "/reports/campaigns/:campaignId", element: <ProtectedRoute element={<CampaignReportPage />} /> },
 
+      { path: "/support", element: <ProtectedRoute element={<HelpSupport />} /> },
+      { path: "/mail-workspace", element: <ProtectedRoute roles={["owner", "admin"]} element={<MailWorkspace />} /> },
+      { path: "/notifications", element: <ProtectedRoute element={<NotificationsPage />} /> },
+
       { path: "/settings", element: <ProtectedRoute roles={["admin"]} element={<SettingsPage />} /> },
       {
         path: "/platform",
@@ -81,6 +90,7 @@ const router = createBrowserRouter([
           { path: "users", element: <PlatformUsers /> },
           { path: "plans", element: <PlatformPlans /> },
           { path: "billing", element: <PlatformBilling /> },
+          { path: "broadcasts", element: <PlatformBroadcasts /> },
           { path: "sessions", element: <PlatformSessions /> },
         ],
       },

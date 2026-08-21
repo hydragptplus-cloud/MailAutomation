@@ -39,6 +39,9 @@ INSTALLED_APPS = [
     "reports",
     "common",
     "billing",
+    "support",
+    "platform_broadcasts",
+    "notifications",
 ]
 
 MIDDLEWARE = [
@@ -140,6 +143,8 @@ REST_FRAMEWORK = {
         "invoice_recover": "5/hour",
         "otp_verify": "10/hour",
         "transaction_verify": "10/hour",
+        "support_message": "10/hour",
+        "platform_broadcast": "20/hour",
     },
     "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
 }
@@ -190,6 +195,8 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "0") == "1"
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "0") == "1"
 MAIL_FLOW_SENDER_NAME = os.getenv("MAIL_FLOW_SENDER_NAME", "Mail Flow Billing")
 MAIL_FLOW_SENDER_EMAIL = os.getenv("MAIL_FLOW_SENDER_EMAIL", os.getenv("DEFAULT_FROM_EMAIL", "billing@example.com"))
+MAIL_FLOW_GENERAL_SENDER_NAME = os.getenv("MAIL_FLOW_GENERAL_SENDER_NAME", "Mail Flow")
+MAIL_FLOW_GENERAL_SENDER_EMAIL = os.getenv("MAIL_FLOW_GENERAL_SENDER_EMAIL", "mailflow@annomous.com")
 MAIL_FLOW_REPLY_TO = os.getenv("MAIL_FLOW_REPLY_TO", "")
 DEFAULT_FROM_EMAIL = f"{MAIL_FLOW_SENDER_NAME} <{MAIL_FLOW_SENDER_EMAIL}>"
 MAIL_FLOW_OTP_RELAY_URL = os.getenv("MAIL_FLOW_OTP_RELAY_URL", "")

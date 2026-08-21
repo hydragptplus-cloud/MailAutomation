@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from common.permissions import OwnerOnly, OwnerOrAdmin
+from common.plan_features import organization_has_support_workspace_plan
 from common.tenancy import is_owner
 from users.serializers import UserSerializer
 from .models import Organization, OrganizationUsage
@@ -42,6 +43,23 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         organization = self.get_object()
         organization.status = Organization.Status.ACTIVE
         organization.save(update_fields=["status", "updated_at"])
+        return Response(self.get_serializer(organization).data)
+
+    @action(detail=True, methods=["post"], url_path="toggle-support-workspace")
+    def toggle_support_workspace(self, request, pk=None):
+        organization = self.get_object()
+        enabled = request.data.get("enabled")
+        wants_enabled = (not organization.support_workspace_enabled) if enabled is None else bool(enabled)
+        if wants_enabled and not organization_has_support_workspace_plan(organization):
+            return Response(
+                {"detail": "Mail workspace is available only on Premium+ and Custom plans."},
+                status=400,
+            )
+        if enabled is None:
+            organization.support_workspace_enabled = not organization.support_workspace_enabled
+        else:
+            organization.support_workspace_enabled = bool(enabled)
+        organization.save(update_fields=["support_workspace_enabled", "updated_at"])
         return Response(self.get_serializer(organization).data)
 
 
