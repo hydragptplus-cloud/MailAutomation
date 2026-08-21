@@ -12,6 +12,7 @@ from campaigns.models import CampaignLog
 from common.models import Organization
 from common.quotas import record_email_result, usage_snapshot, validate_organization_active
 from rest_framework.exceptions import ValidationError
+from .campaign_relay import send_campaign_via_relay
 
 def _connection(account):
     context = ssl.create_default_context()
@@ -28,6 +29,47 @@ def _connection(account):
     if account.username and account.get_password():
         server.login(account.username, account.get_password())
     return server
+
+
+def _deliver_with_fallback(
+    account,
+    msg,
+    *,
+    request_id,
+    recipient,
+    recipient_name,
+    subject,
+    text,
+    html,
+    message_id,
+):
+    try:
+        server = _connection(account)
+        try:
+            server.send_message(msg)
+        finally:
+            try:
+                server.quit()
+            except Exception:
+                try:
+                    server.close()
+                except Exception:
+                    pass
+        return message_id
+    except Exception as direct_error:
+        relay_result = send_campaign_via_relay(
+            account,
+            request_id=request_id,
+            recipient=recipient,
+            recipient_name=recipient_name,
+            subject=subject,
+            text=text,
+            html=html,
+            message_id=message_id,
+        )
+        if not relay_result["ok"]:
+            raise RuntimeError(relay_result["message"]) from direct_error
+        return relay_result["provider_message_id"] or message_id
 
 def send_log_email(log_id):
     with transaction.atomic():
@@ -120,20 +162,21 @@ def send_log_email(log_id):
     domain = from_email.split("@")[-1] if "@" in from_email else "annomous.com"
     message_id = make_msgid(domain=domain)
     msg["Message-ID"] = message_id
-    msg.set_content("This email requires an HTML-capable email client.")
+    text = "This email requires an HTML-capable email client."
+    msg.set_content(text)
     msg.add_alternative(html, subtype="html")
 
-    server = _connection(account)
-    try:
-        server.send_message(msg)
-    finally:
-        try:
-            server.quit()
-        except Exception:
-            try:
-                server.close()
-            except Exception:
-                pass
+    message_id = _deliver_with_fallback(
+        account,
+        msg,
+        request_id=f"campaign-log-{log_id}",
+        recipient=log.recipient_email,
+        recipient_name=recipient.name if recipient else "",
+        subject=subject,
+        text=text,
+        html=html,
+        message_id=message_id,
+    )
 
     now = timezone.now()
     with transaction.atomic():

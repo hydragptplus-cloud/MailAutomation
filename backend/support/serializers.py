@@ -85,6 +85,14 @@ class SupportMailboxSerializer(serializers.ModelSerializer):
             "password_configured", "created_at", "updated_at",
         )
         read_only_fields = ("last_synced_at", "last_error", "password_configured", "created_at", "updated_at")
+        extra_kwargs = {
+            # Tenant assignment is resolved from the authenticated user below.
+            # Owners are the only callers allowed to choose it explicitly.
+            "organization": {"required": False},
+        }
+        # The generated UniqueTogetherValidator makes organization mandatory
+        # before validate() can derive it from the authenticated user.
+        validators = []
 
     def get_password_configured(self, obj):
         return bool(obj.encrypted_imap_password)
@@ -94,16 +102,28 @@ class SupportMailboxSerializer(serializers.ModelSerializer):
         user = request.user
         if user.role != "owner":
             organization = getattr(user, "organization", None)
+            if organization is None:
+                raise serializers.ValidationError({"organization": "Your user is not assigned to an organization."})
             if not organization_support_workspace_allowed(organization):
                 raise serializers.ValidationError({"detail": "Mail workspace is available only on Premium+ and Custom plans."})
             attrs["organization"] = organization
-        elif not attrs.get("organization") and self.instance is None:
-            attrs["organization"] = request_organization(request, required=False)
+        elif self.instance is None:
+            organization = attrs.get("organization") or request_organization(request, required=False)
+            if organization is None:
+                raise serializers.ValidationError({"organization": "Select an organization."})
+            attrs["organization"] = organization
         if self.instance is None and not attrs.get("imap_password"):
             raise serializers.ValidationError({"imap_password": "Password is required."})
         organization = attrs.get("organization") or getattr(self.instance, "organization", None)
         if organization and not organization_has_support_workspace_plan(organization):
             raise serializers.ValidationError({"detail": "Mail workspace is available only on Premium+ and Custom plans."})
+        email = attrs.get("email") or getattr(self.instance, "email", None)
+        if organization and email:
+            duplicates = SupportMailbox.objects.filter(organization=organization, email=email)
+            if self.instance is not None:
+                duplicates = duplicates.exclude(pk=self.instance.pk)
+            if duplicates.exists():
+                raise serializers.ValidationError({"email": "A mailbox with this email already exists for this organization."})
         if self.instance is None and organization:
             usage = organization_mailbox_usage(organization)
             if usage["used"] >= usage["limit"]:
