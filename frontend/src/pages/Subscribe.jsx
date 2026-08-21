@@ -77,6 +77,7 @@ export default function Subscribe() {
   const [deliveryWaiting, setDeliveryWaiting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileError, setTurnstileError] = useState(false);
+  const [turnstileRenderKey, setTurnstileRenderKey] = useState(0);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const turnstileRef = useRef(null);
   const widgetRef = useRef(null);
@@ -131,7 +132,7 @@ export default function Subscribe() {
     }
     script.addEventListener("load", render);
     return () => { cancelled = true; script.removeEventListener("load", render); };
-  }, [emailVerified, otpSent, plan]);
+  }, [emailVerified, otpSent, plan, turnstileRenderKey]);
 
   useEffect(() => {
     if (!verificationOpen) return undefined;
@@ -161,6 +162,7 @@ export default function Subscribe() {
     widgetRef.current = null;
     setTurnstileToken("");
     setTurnstileError(false);
+    setTurnstileRenderKey((current) => current + 1);
   }
 
   function resetVerificationAttempt() {
@@ -185,7 +187,7 @@ export default function Subscribe() {
     if (event.target.name === "email") { setEmailVerified(false); resetVerificationAttempt(); }
   };
 
-  async function requestCode() {
+  async function requestCode(email = form.email) {
     if (!turnstileToken) {
       setVerificationError(turnstileError
         ? "Checkout verification could not load. Disable content blockers, allow challenges.cloudflare.com, or try another network."
@@ -195,7 +197,7 @@ export default function Subscribe() {
     setVerificationBusy("request");
     setVerificationError("");
     try {
-      await startCheckoutEmail(form.email, turnstileToken);
+      await startCheckoutEmail(email, turnstileToken);
       setOtpSent(true);
       setVerificationOpen(true);
       setDeliveryWaiting(true);
@@ -224,12 +226,24 @@ export default function Subscribe() {
   async function submit(event) {
     event.preventDefault();
     setError("");
-    if (!emailVerified) { await requestCode(); return; }
+    // Password managers and browser autofill can update DOM inputs without
+    // dispatching the React change events that keep `form` in sync.
+    const submitted = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const submittedForm = {
+      ...form,
+      name: String(submitted.name || ""),
+      email: String(submitted.email || ""),
+      organization_name: String(submitted.organization_name || ""),
+      password: String(submitted.password || ""),
+      network: String(submitted.network || form.network),
+    };
+    setForm(submittedForm);
+    if (!emailVerified) { await requestCode(submittedForm.email); return; }
     setLoading(true);
     try {
       const invoice = isCustom
-        ? await createCustomInvoice({ ...form, limits: customLimits, idempotency_key: idempotencyKey })
-        : await createInvoice({ ...form, plan_slug: plan.slug, idempotency_key: idempotencyKey });
+        ? await createCustomInvoice({ ...submittedForm, limits: customLimits, idempotency_key: idempotencyKey })
+        : await createInvoice({ ...submittedForm, plan_slug: plan.slug, idempotency_key: idempotencyKey });
       navigate(`/payment/${invoice.id || "current"}`);
     } catch (err) { setError(apiError(err)); }
     finally { setLoading(false); }
@@ -255,7 +269,7 @@ export default function Subscribe() {
             <Field label="Organization name" name="organization_name" autoComplete="organization" value={form.organization_name} onChange={update} />
             <Field label="Password" name="password" type="password" autoComplete="new-password" value={form.password} onChange={update} minLength="8" />
             {plan && !plan.is_free && <div><label className="text-xs font-bold text-slate-300">USDT network</label><div className="grid sm:grid-cols-2 gap-3 mt-2">{networks.map(([value, label, note]) => <label key={value} className={`p-4 rounded-xl border cursor-pointer ${form.network === value ? "border-indigo-400 bg-indigo-500/10" : "border-slate-700 bg-slate-950/50"}`}><input className="sr-only" type="radio" name="network" value={value} checked={form.network === value} onChange={update} /><strong className="block text-sm">{label}</strong><span className="text-xs text-slate-500">{note}</span></label>)}</div></div>}
-            {!emailVerified && <div><label className="mb-3 block text-xs font-bold text-slate-300">Checkout verification</label><div ref={turnstileRef} />{turnstileError && <p className="mt-2 text-xs text-amber-300">Cloudflare verification is unavailable. Refresh after allowing challenges.cloudflare.com.</p>}<p className="mt-3 text-xs leading-5 text-slate-500">After this check passes, clicking the button sends a six-digit OTP to your email.</p></div>}
+            {!emailVerified && <div><label className="mb-3 block text-xs font-bold text-slate-300">Checkout verification</label><div key={turnstileRenderKey} ref={turnstileRef} />{turnstileError && <p className="mt-2 text-xs text-amber-300">Cloudflare verification is unavailable. Refresh after allowing challenges.cloudflare.com.</p>}<p className="mt-3 text-xs leading-5 text-slate-500">After this check passes, clicking the button sends a six-digit OTP to your email.</p></div>}
             {emailVerified && <p className="flex items-center gap-2 text-sm text-emerald-300"><Check className="w-4 h-4" /> Email verified</p>}
             <button ref={verificationTriggerRef} disabled={!plan || loading || Boolean(verificationBusy)} className="w-full py-3.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 font-bold disabled:opacity-50 flex items-center justify-center gap-2">{loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : verificationBusy === "request" ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending OTP…</> : emailVerified ? "Create USDT invoice" : "Send OTP to verify email"}</button>
             <p className="flex justify-center items-center gap-2 text-[11px] text-slate-600"><LockKeyhole className="w-3 h-3" /> Passwords are securely hashed. We never request wallet keys.</p>

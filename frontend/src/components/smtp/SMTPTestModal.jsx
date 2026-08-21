@@ -35,12 +35,15 @@ export default function SMTPTestModal({
       });
       toast.success("Connection test completed!");
     } catch (err) {
+      const data = err.response?.data || {};
       setTestResult({
-        dns: true,
-        connection: true,
-        tls: false,
-        auth: false,
-        message: err.response?.data?.detail || "Connection failed. Please check host, port, or credentials.",
+        dns: Boolean(data.dns),
+        connection: Boolean(data.connection),
+        tls: Boolean(data.tls),
+        auth: Boolean(data.auth),
+        stage: data.stage,
+        smtpCode: data.smtp_code,
+        message: data.message || data.detail || "Connection failed. Please check host, port, or credentials.",
       });
       toast.error("SMTP Connection test failed.");
     } finally {
@@ -74,7 +77,9 @@ export default function SMTPTestModal({
     } catch (err) {
       setTestResult({
         success: false,
-        message: err.response?.data?.detail || "554 Delivery failed. Rejected by server.",
+        message: err.response?.data?.message || err.response?.data?.detail || "SMTP test relay could not complete delivery.",
+        stage: err.response?.data?.stage,
+        smtpCode: err.response?.data?.smtp_code,
         timestamp: new Date().toISOString(),
       });
       toast.error("Test email delivery failed.");
@@ -143,6 +148,8 @@ export default function SMTPTestModal({
               <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-300">
                 <p className="text-slate-500 font-semibold mb-1">Server Response Raw Logs:</p>
                 <p>{testResult.message}</p>
+                {testResult.stage && <p className="mt-1 text-slate-500">Stage: {testResult.stage}</p>}
+                {testResult.smtpCode && <p className="text-slate-500">SMTP code: {testResult.smtpCode}</p>}
               </div>
             </div>
           )}
@@ -211,6 +218,8 @@ export default function SMTPTestModal({
                 {testResult.success ? "Email Dispatched" : "Delivery Error"}
               </div>
               <p>Response: {testResult.message}</p>
+              {testResult.stage && <p>Stage: {testResult.stage}</p>}
+              {testResult.smtpCode && <p>SMTP code: {testResult.smtpCode}</p>}
               <p className="opacity-75">Timestamp: {new Date(testResult.timestamp).toLocaleString()}</p>
             </div>
           )}

@@ -56,7 +56,9 @@ class SMTPAccountViewSet(TenantViewSetMixin, viewsets.ModelViewSet):
             sent_today = account.sent_today if account.sent_date == timezone.localdate() else 0
             if sent_today >= account.daily_limit:
                 return Response({"detail": "SMTP daily sending limit reached."}, status=400)
-            result = send_test_mail(account, recipient_email)
+            subject = str(request.data.get("subject") or "Test Email from Mail Flow")[:180]
+            message = str(request.data.get("message") or "This is a test email sent from Mail Flow.")[:20000]
+            result = send_test_mail(account, recipient_email, subject=subject, message=message)
             record_email_result(account.organization_id, sent=bool(result.get("ok")))
             if result.get("ok"):
                 if account.sent_date != timezone.localdate():
