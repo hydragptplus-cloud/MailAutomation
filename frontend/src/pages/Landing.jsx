@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { apiError, getPlans, getPublicMonitorStats, recoverInvoice } from "../services/billingApi";
+import BrandLogo from "../components/BrandLogo";
 
 const format = (value) => new Intl.NumberFormat("en-US").format(value || 0);
 
@@ -145,18 +146,8 @@ export default function Landing() {
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#060911]/80 backdrop-blur-xl transition-all">
         <div className="max-w-7xl mx-auto h-20 px-5 lg:px-8 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3 group">
-            <span className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 grid place-items-center shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform duration-300">
-              <Mail className="w-5 h-5 text-white" />
-            </span>
-            <span>
-              <strong className="block text-base tracking-tight font-bold text-white group-hover:text-indigo-300 transition-colors">
-                Mail Flow
-              </strong>
-              <small className="text-[11px] text-slate-400 uppercase tracking-widest font-semibold block -mt-0.5">
-                Delivery cloud
-              </small>
-            </span>
+          <Link to="/" className="group" aria-label="Mail Flow home">
+            <BrandLogo className="h-10 w-auto max-w-[190px] object-contain transition-transform duration-300 group-hover:scale-[1.02]" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">

@@ -4,6 +4,7 @@ import { Menu, LogOut, LogIn, UserCheck } from "lucide-react";
 import { clearTokens, isAuthenticated, getUser } from "../utils/auth";
 import api from "../services/api";
 import NotificationBell from "./notifications/NotificationBell";
+import BrandLogo from "./BrandLogo";
 
 export default function Navbar({ onToggleMobileMenu }) {
   const navigate = useNavigate();
@@ -35,6 +36,7 @@ export default function Navbar({ onToggleMobileMenu }) {
           <Menu className="w-5 h-5" />
         </button>
 
+        <BrandLogo variant="mark" className="hidden sm:block w-8 h-8 object-contain shrink-0" alt="" />
         <div className="truncate">
           <strong className="text-slate-100 font-semibold text-xs sm:text-sm md:text-base truncate block sm:inline">
           Mail Flow

@@ -16,6 +16,6 @@ pandas==2.2.3
 beautifulsoup4==4.13.3
 requests==2.32.3
 gunicorn==23.0.0
-vercel-blob==0.4.2
+vercel==0.10.0
 pyotp==2.9.0
 qrcode[pil]==8.0

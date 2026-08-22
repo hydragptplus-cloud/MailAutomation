@@ -16,9 +16,9 @@ import os
 import sys
 from pathlib import Path
 
-# Add backend directory to Python path
+# The utility lives inside the Django backend directory.
 CURRENT_DIR = Path(__file__).resolve().parent
-BACKEND_DIR = CURRENT_DIR / "backend"
+BACKEND_DIR = CURRENT_DIR
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 

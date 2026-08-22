@@ -14,10 +14,7 @@ def auto_backup_database_task(self):
     logger.info("Starting automated database backup task...")
     try:
         result = create_database_backup(upload_to_blob=True, retention_count=14)
-        if result.get("blob_error"):
-            logger.warning(f"Backup succeeded locally/partially but Blob upload had error: {result.get('blob_error')}")
-        else:
-            logger.info(f"Automated database backup completed successfully: {result.get('filename')} (Blob: {result.get('blob_pathname')})")
+        logger.info(f"Automated database backup completed successfully: {result.get('filename')} (Blob: {result.get('blob_pathname')})")
         return result
     except Exception as exc:
         logger.error(f"Automated database backup task failed: {exc}")

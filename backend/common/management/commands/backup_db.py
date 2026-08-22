@@ -77,11 +77,6 @@ class Command(BaseCommand):
             if result.get("blob_pathname"):
                 self.stdout.write(self.style.SUCCESS(f"Uploaded to Vercel Blob: {result['blob_pathname']}"))
                 self.stdout.write(f"Blob URL: {result['blob_url']}")
-            elif upload_to_blob:
-                if result.get("blob_error"):
-                    self.stdout.write(self.style.WARNING(f"Vercel Blob upload failed: {result['blob_error']}"))
-                else:
-                    self.stdout.write(self.style.WARNING("Vercel Blob upload skipped (BLOB_READ_WRITE_TOKEN missing)."))
         except Exception as exc:
             self.stdout.write(self.style.ERROR(f"Backup failed: {exc}"))
             raise

@@ -19,6 +19,7 @@ import {
   KeyRound,
 } from "lucide-react";
 import { setTokens, setUser } from "../utils/auth";
+import BrandLogo from "../components/BrandLogo";
 import twoFactorApi from "../services/twoFactorApi";
 import { apiError } from "../utils/apiError";
 
@@ -332,9 +333,7 @@ export default function Login() {
           {/* Header & Logo */}
           <div>
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-sky-500 flex items-center justify-center shadow-lg shadow-indigo-600/30">
-                <Mail className="w-5 h-5 text-white" />
-              </div>
+              <BrandLogo variant="mark" className="w-12 h-12 object-contain shrink-0" alt="" />
               <div>
                 <span className="text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
                   Mail Flow <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">v2.0</span>

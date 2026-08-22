@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { apiError, createFreeAccount, getPlans } from "../services/billingApi";
 import { setTokens, setUser } from "../utils/auth";
+import BrandLogo from "../components/BrandLogo";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -155,9 +156,7 @@ export default function Register() {
             <div>
               {/* Logo & Header */}
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-600/30">
-                  <Mail className="w-5 h-5 text-white" />
-                </div>
+                <BrandLogo variant="mark" className="w-12 h-12 object-contain shrink-0" alt="" />
                 <div>
                   <span className="text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
                     Mail Flow

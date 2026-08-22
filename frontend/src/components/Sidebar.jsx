@@ -11,12 +11,12 @@ import {
   Server,
   Users,
   X,
-  Sparkles,
   Building2,
   ShieldCheck,
 } from "lucide-react";
 import { getUser } from "../utils/auth";
 import api from "../services/api";
+import BrandLogo from "./BrandLogo";
 
 const items = [
   ["/dashboard", "Dashboard", LayoutDashboard, ["owner", "admin", "manager", "operator", "viewer"]],
@@ -75,13 +75,11 @@ export default function Sidebar({ isOpen, onClose }) {
         <div>
           {/* Brand Header */}
           <div className="flex items-center justify-between mb-8 px-1">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-sky-500 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 font-bold">
-                M
-              </div>
+            <div className="flex items-center gap-3 min-w-0">
+              <BrandLogo variant="mark" className="w-10 h-10 object-contain shrink-0" alt="" />
               <div>
-                <span className="font-bold text-white tracking-tight flex items-center gap-1 text-base">
-                  Mail Flow <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="font-bold text-white tracking-tight flex items-center text-base">
+                  Mail Flow
                 </span>
                 <span className="text-[10px] text-slate-400 block font-mono">v2.0 Enterprise</span>
               </div>

@@ -9,9 +9,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import requests
 from django.conf import settings
 from django.core.management import call_command
+from vercel import blob
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ BACKUP_EXCLUDES = [
 ]
 
 BACKUP_BLOB_PREFIX = "db_backups"
+BACKUP_BLOB_ACCESS = "private"
 
 
 def generate_backup_filename() -> str:
@@ -69,6 +70,10 @@ def create_database_backup(
     Creates a full database backup, compresses it, saves it locally and/or uploads it to Vercel Blob.
     Automatically prunes older backups in Vercel Blob beyond retention_count.
     """
+    blob_token = token or os.getenv("BLOB_READ_WRITE_TOKEN")
+    if upload_to_blob and not blob_token:
+        raise ValueError("BLOB_READ_WRITE_TOKEN is required to upload a database backup.")
+
     filename = generate_backup_filename()
     compressed_data = dump_database_to_gzip_bytes()
     data_size = len(compressed_data)
@@ -92,34 +97,28 @@ def create_database_backup(
         result["saved_local"] = str(local_file.resolve())
 
     # 2. Upload to Vercel Blob if requested
-    blob_token = token or os.getenv("BLOB_READ_WRITE_TOKEN")
     if upload_to_blob:
-        if not blob_token:
-            logger.warning("BLOB_READ_WRITE_TOKEN not configured; skipping Vercel Blob upload.")
-        else:
-            import vercel_blob
+        blob_pathname = f"{BACKUP_BLOB_PREFIX}/{filename}"
+        try:
+            put_result = blob.put(
+                blob_pathname,
+                compressed_data,
+                access=BACKUP_BLOB_ACCESS,
+                token=blob_token,
+                add_random_suffix=False,
+                overwrite=True,
+                content_type="application/gzip",
+            )
+            result["blob_url"] = put_result.get("url")
+            result["blob_pathname"] = put_result.get("pathname") or blob_pathname
+            logger.info(f"Successfully uploaded database backup to Vercel Blob: {result['blob_pathname']}")
 
-            blob_pathname = f"{BACKUP_BLOB_PREFIX}/{filename}"
-            try:
-                put_result = vercel_blob.put(
-                    blob_pathname,
-                    compressed_data,
-                    options={
-                        "token": blob_token,
-                        "addRandomSuffix": False,
-                        "allowOverwrite": True,
-                    },
-                )
-                result["blob_url"] = put_result.get("url")
-                result["blob_pathname"] = put_result.get("pathname") or blob_pathname
-                logger.info(f"Successfully uploaded database backup to Vercel Blob: {result['blob_pathname']}")
-
-                # Prune older backups in Vercel Blob
-                if retention_count > 0:
-                    prune_older_blob_backups(keep_count=retention_count, token=blob_token)
-            except Exception as exc:
-                logger.error(f"Failed to upload database backup to Vercel Blob: {exc}")
-                result["blob_error"] = str(exc)
+            # Prune older backups in Vercel Blob
+            if retention_count > 0:
+                prune_older_blob_backups(keep_count=retention_count, token=blob_token)
+        except Exception as exc:
+            logger.error(f"Failed to upload database backup to Vercel Blob: {exc}")
+            raise RuntimeError(f"Failed to upload database backup to Vercel Blob: {exc}") from exc
 
     return result
 
@@ -130,10 +129,17 @@ def list_blob_backups(token: Optional[str] = None) -> List[Dict[str, Any]]:
     if not blob_token:
         raise ValueError("BLOB_READ_WRITE_TOKEN environment variable is required to list backups.")
 
-    import vercel_blob
-
-    resp = vercel_blob.list(options={"prefix": f"{BACKUP_BLOB_PREFIX}/", "token": blob_token})
-    blobs = resp.get("blobs", [])
+    resp = blob.list_objects(prefix=f"{BACKUP_BLOB_PREFIX}/", token=blob_token)
+    blobs = [
+        {
+            "url": item.get("url"),
+            "downloadUrl": item.get("download_url"),
+            "pathname": item.get("pathname"),
+            "size": item.get("size", 0),
+            "uploadedAt": item.get("uploaded_at"),
+        }
+        for item in resp.get("blobs", [])
+    ]
     # Sort descending by uploadedAt / pathname
     blobs.sort(key=lambda x: x.get("uploadedAt") or x.get("pathname", ""), reverse=True)
     return blobs
@@ -145,8 +151,6 @@ def prune_older_blob_backups(keep_count: int = 14, token: Optional[str] = None) 
     if not blob_token:
         return 0
 
-    import vercel_blob
-
     try:
         blobs = list_blob_backups(token=blob_token)
         if len(blobs) <= keep_count:
@@ -155,7 +159,7 @@ def prune_older_blob_backups(keep_count: int = 14, token: Optional[str] = None) 
         to_delete = blobs[keep_count:]
         urls_to_delete = [b["url"] for b in to_delete if b.get("url")]
         if urls_to_delete:
-            vercel_blob.delete(urls_to_delete, options={"token": blob_token})
+            blob.delete(urls_to_delete, token=blob_token)
             logger.info(f"Pruned {len(urls_to_delete)} old database backups from Vercel Blob.")
             return len(urls_to_delete)
     except Exception as exc:
@@ -181,10 +185,6 @@ def download_blob_backup(
             raise ValueError(f"Backup '{backup_pathname_or_url}' not found in Vercel Blob.")
         url = match["url"]
 
-    headers = {"Authorization": f"Bearer {blob_token}"} if blob_token else {}
-    resp = requests.get(url, headers=headers, stream=True, timeout=60)
-    resp.raise_for_status()
-
     if destination_path:
         dest = Path(destination_path)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -194,10 +194,23 @@ def download_blob_backup(
         os.close(fd)
         dest = Path(temp_dest)
 
-    with open(dest, "wb") as f:
-        for chunk in resp.iter_content(chunk_size=1024 * 256):
-            if chunk:
-                f.write(chunk)
+    try:
+        blob.download_file(
+            url,
+            dest,
+            access=BACKUP_BLOB_ACCESS,
+            token=blob_token,
+            timeout=60,
+            overwrite=True,
+            create_parents=True,
+        )
+    except Exception:
+        if not destination_path and dest.exists():
+            try:
+                dest.unlink()
+            except OSError:
+                pass
+        raise
 
     return str(dest.resolve())
 

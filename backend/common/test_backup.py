@@ -43,8 +43,13 @@ class BackupRestoreTests(TestCase):
             self.assertTrue(result["filename"].endswith(".json.gz"))
             self.assertGreater(result["size_bytes"], 0)
 
-    @patch("vercel_blob.put")
-    @patch("vercel_blob.list")
+    def test_blob_backup_requires_token(self):
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "BLOB_READ_WRITE_TOKEN"):
+                create_database_backup(upload_to_blob=True)
+
+    @patch("common.backup.blob.put")
+    @patch("common.backup.blob.list_objects")
     def test_create_database_backup_blob(self, mock_list, mock_put):
         mock_put.return_value = {
             "url": "https://blob.vercel.com/db_backups/test.json.gz",
@@ -56,13 +61,14 @@ class BackupRestoreTests(TestCase):
         self.assertEqual(result.get("blob_url"), "https://blob.vercel.com/db_backups/test.json.gz")
         self.assertEqual(result.get("blob_pathname"), "db_backups/test.json.gz")
         mock_put.assert_called_once()
+        self.assertEqual(mock_put.call_args.kwargs["access"], "private")
 
-    @patch("vercel_blob.delete")
-    @patch("vercel_blob.list")
+    @patch("common.backup.blob.delete")
+    @patch("common.backup.blob.list_objects")
     def test_prune_older_blob_backups(self, mock_list, mock_delete):
         mock_list.return_value = {
             "blobs": [
-                {"pathname": f"db_backups/backup_{i}.json.gz", "url": f"https://blob.com/{i}", "uploadedAt": f"2026-08-{i:02d}"}
+                {"pathname": f"db_backups/backup_{i}.json.gz", "url": f"https://blob.com/{i}", "uploaded_at": f"2026-08-{i:02d}"}
                 for i in range(1, 20)
             ]
         }
