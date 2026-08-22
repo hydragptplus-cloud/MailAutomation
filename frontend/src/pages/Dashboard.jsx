@@ -87,7 +87,7 @@ export default function Dashboard() {
             onClick={() => navigate("/campaigns")}
             className="flex items-center gap-1 text-xs font-semibold text-indigo-400 transition-colors hover:text-indigo-300"
           >
-            View All <ArrowRight size={14} />
+            <ArrowRight size={14} /> View All
           </button>
         </div>
 

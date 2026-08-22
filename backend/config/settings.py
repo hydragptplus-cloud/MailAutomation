@@ -185,6 +185,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "common.tasks.auto_backup_database_task",
         "schedule": crontab(hour=3, minute=0),
     },
+    "send-upcoming-renewal-reminders-daily": {
+        "task": "billing.tasks.send_upcoming_renewal_reminders",
+        "schedule": crontab(hour=9, minute=0),
+    },
 }
 
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")

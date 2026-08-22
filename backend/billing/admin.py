@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from .models import CheckoutSession, FreePlanClaim, InvoiceAccessCode, PaymentInvoice, PaymentSecurityAuditEvent, PaymentTransferLedger, Plan, Subscription
+from .models import (
+    BillingReminderDelivery,
+    CheckoutSession,
+    FreePlanClaim,
+    InvoiceAccessCode,
+    PaymentInvoice,
+    PaymentSecurityAuditEvent,
+    PaymentTransferLedger,
+    Plan,
+    Subscription,
+)
 
 
 @admin.register(Plan)
@@ -96,4 +106,25 @@ class PaymentSecurityAuditEventAdmin(admin.ModelAdmin):
     readonly_fields = tuple(field.name for field in PaymentSecurityAuditEvent._meta.fields)
 
 
+@admin.register(BillingReminderDelivery)
+class BillingReminderDeliveryAdmin(admin.ModelAdmin):
+    list_display = ("subscription", "recipient_email", "renewal_date", "sent_at", "attempt_count", "created_at")
+    list_filter = ("sent_at", "renewal_date")
+    search_fields = ("recipient_email", "subscription__organization__name")
+    readonly_fields = tuple(field.name for field in BillingReminderDelivery._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_view_permission(self, request, obj=None):
+        return True
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 admin.site.register(FreePlanClaim)
+

@@ -261,3 +261,27 @@ class FreePlanClaim(models.Model):
     email_hash = models.CharField(max_length=64, unique=True)
     organization = models.OneToOneField("common.Organization", on_delete=models.CASCADE, related_name="free_plan_claim")
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class BillingReminderDelivery(models.Model):
+    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="reminder_deliveries")
+    recipient_email = models.EmailField(db_index=True)
+    renewal_date = models.DateTimeField(db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_error = models.TextField(blank=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("subscription", "recipient_email", "renewal_date"),
+                name="unique_subscription_renewal_delivery",
+            )
+        ]
+
+    def __str__(self):
+        return f"Renewal reminder for {self.recipient_email} - {self.subscription_id} ({self.renewal_date})"
+

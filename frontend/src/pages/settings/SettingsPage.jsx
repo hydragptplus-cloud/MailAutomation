@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Sliders,
   Mail,
@@ -173,7 +174,7 @@ export default function SettingsPage() {
             maxUsers: res.data.max_users || 0,
           }));
         }
-      }).catch(() => {});
+      }).catch(() => { });
     });
   };
 
@@ -434,11 +435,10 @@ export default function SettingsPage() {
       key: "two_factor_enabled",
       header: "2FA",
       render: (val) => (
-        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-          val
-            ? "bg-emerald-400/10 text-emerald-300 border border-emerald-500/30"
-            : "bg-slate-500/10 text-slate-500 border border-slate-600/30"
-        }`}>
+        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${val
+          ? "bg-emerald-400/10 text-emerald-300 border border-emerald-500/30"
+          : "bg-slate-500/10 text-slate-500 border border-slate-600/30"
+          }`}>
           {val ? "Active" : "Off"}
         </span>
       ),
@@ -546,11 +546,10 @@ export default function SettingsPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                isActive
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
-              }`}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${isActive
+                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
+                }`}
             >
               <Icon className="w-4 h-4" />
               {tab.label}
@@ -780,11 +779,10 @@ export default function SettingsPage() {
             </div>
 
             <div className="flex items-center gap-3 shrink-0">
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${
-                settings.two_factor_enabled
-                  ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-sm shadow-indigo-500/15"
-                  : "bg-slate-900 text-slate-500 border-slate-800"
-              }`}>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${settings.two_factor_enabled
+                ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-sm shadow-indigo-500/15"
+                : "bg-slate-900 text-slate-500 border-slate-800"
+                }`}>
                 {settings.two_factor_enabled ? "Enforced" : "Disabled"}
               </span>
               <button
@@ -792,17 +790,15 @@ export default function SettingsPage() {
                 role="switch"
                 aria-checked={settings.two_factor_enabled}
                 onClick={() => setSettings({ ...settings, two_factor_enabled: !settings.two_factor_enabled })}
-                className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 transition-all duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-950 ${
-                  settings.two_factor_enabled
-                    ? "bg-gradient-to-r from-indigo-600 to-indigo-500 border-indigo-400 shadow-lg shadow-indigo-600/40"
-                    : "bg-slate-800 border-slate-700 hover:border-slate-600"
-                }`}
+                className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 transition-all duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-950 ${settings.two_factor_enabled
+                  ? "bg-gradient-to-r from-indigo-600 to-indigo-500 border-indigo-400 shadow-lg shadow-indigo-600/40"
+                  : "bg-slate-800 border-slate-700 hover:border-slate-600"
+                  }`}
               >
                 <span
                   aria-hidden="true"
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out mt-0.5 ${
-                    settings.two_factor_enabled ? "translate-x-7" : "translate-x-1"
-                  }`}
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out mt-0.5 ${settings.two_factor_enabled ? "translate-x-7" : "translate-x-1"
+                    }`}
                 />
               </button>
             </div>
@@ -1086,11 +1082,10 @@ export default function SettingsPage() {
                   </p>
                 </div>
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
-                twoFAStatus.enabled
-                  ? "bg-emerald-400/10 text-emerald-300 border-emerald-500/30"
-                  : "bg-slate-700/30 text-slate-400 border-slate-600/30"
-              }`}>
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${twoFAStatus.enabled
+                ? "bg-emerald-400/10 text-emerald-300 border-emerald-500/30"
+                : "bg-slate-700/30 text-slate-400 border-slate-600/30"
+                }`}>
                 {twoFAStatus.enabled ? "Enabled" : "Disabled"}
               </span>
             </div>
@@ -1121,16 +1116,16 @@ export default function SettingsPage() {
                     <ShieldOff className="w-3.5 h-3.5" />
                     Disable 2FA
                   </button>
-                  </>
-                )}
-              </div>
+                </>
+              )}
             </div>
           </div>
-        )}
+        </div>
+      )}
 
       {/* 2FA Setup Modal (Accessible from any tab) */}
-      {showSetup2FA && setup2FAData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      {showSetup2FA && setup2FAData && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5 relative">
             <button onClick={() => setShowSetup2FA(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
             <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
@@ -1155,7 +1150,7 @@ export default function SettingsPage() {
                   onClick={() => setSetup2FAStep(2)}
                   className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all"
                 >
-                  I&apos;ve scanned the code &rarr; Next
+                  &rarr; I&apos;ve scanned the code - Next
                 </button>
               </div>
             )}
@@ -1198,9 +1193,9 @@ export default function SettingsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {setup2FABackupCodes.map((code, i) => (
-                        <div key={i} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-center font-mono text-sm text-slate-200 tracking-widest">
-                          {code}
-                        </div>
+                    <div key={i} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-center font-mono text-sm text-slate-200 tracking-widest">
+                      {code}
+                    </div>
                   ))}
                 </div>
                 <div className="flex gap-3">
@@ -1211,17 +1206,18 @@ export default function SettingsPage() {
                   onClick={() => setShowSetup2FA(false)}
                   className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all"
                 >
-                  I&apos;ve saved my codes &rarr; Done
+                  &rarr; I&apos;ve saved my codes - Done
                 </button>
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Disable 2FA Modal (Accessible from any tab) */}
-      {showDisable2FA && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      {showDisable2FA && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 relative">
             <button onClick={() => setShowDisable2FA(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
             <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2"><ShieldOff className="w-5 h-5 text-rose-400" />Disable Two-Factor Authentication</h3>
@@ -1251,12 +1247,13 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Regenerate Backup Codes Modal (Accessible from any tab) */}
-      {showRegenCodes && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      {showRegenCodes && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 relative">
             <button onClick={() => setShowRegenCodes(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
             <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2"><RefreshCcw className="w-5 h-5 text-indigo-400" />Regenerate Backup Codes</h3>
@@ -1315,7 +1312,8 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

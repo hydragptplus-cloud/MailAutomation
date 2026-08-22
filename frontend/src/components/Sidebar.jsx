@@ -33,7 +33,8 @@ const items = [
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
-  const role = getUser().role;
+  const user = getUser();
+  const role = user?.role || "viewer";
   const [account, setAccount] = useState(null);
 
   useEffect(() => {
@@ -69,8 +70,9 @@ export default function Sidebar({ isOpen, onClose }) {
 
       {/* Sidebar Navigation */}
       <aside
-        className={`sidebar fixed lg:sticky top-0 left-0 z-50 h-screen w-64 lg:w-60 bg-slate-900 border-r border-slate-800 p-5 flex flex-col justify-between transition-transform duration-300 ease-in-out ${isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-          }`}
+        className={`sidebar fixed lg:sticky top-0 left-0 z-50 h-[100dvh] w-64 lg:w-60 bg-slate-900 border-r border-slate-800 p-5 flex flex-col justify-between transition-all duration-300 ease-in-out ${
+          isOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full lg:translate-x-0"
+        }`}
       >
         <div>
           {/* Brand Header */}

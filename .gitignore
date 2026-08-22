@@ -16,3 +16,6 @@ backups/*
 celerybeat-schedule
 .api_tokens.json
 *.token
+email_previews
+generate_email_previews.py
+email_templates_gallery.html
