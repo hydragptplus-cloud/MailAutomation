@@ -109,8 +109,8 @@ def create_database_backup(
                 overwrite=True,
                 content_type="application/gzip",
             )
-            result["blob_url"] = put_result.get("url")
-            result["blob_pathname"] = put_result.get("pathname") or blob_pathname
+            result["blob_url"] = put_result.url
+            result["blob_pathname"] = put_result.pathname or blob_pathname
             logger.info(f"Successfully uploaded database backup to Vercel Blob: {result['blob_pathname']}")
 
             # Prune older backups in Vercel Blob
@@ -132,13 +132,13 @@ def list_blob_backups(token: Optional[str] = None) -> List[Dict[str, Any]]:
     resp = blob.list_objects(prefix=f"{BACKUP_BLOB_PREFIX}/", token=blob_token)
     blobs = [
         {
-            "url": item.get("url"),
-            "downloadUrl": item.get("download_url"),
-            "pathname": item.get("pathname"),
-            "size": item.get("size", 0),
-            "uploadedAt": item.get("uploaded_at"),
+            "url": item.url,
+            "downloadUrl": item.download_url,
+            "pathname": item.pathname,
+            "size": item.size,
+            "uploadedAt": item.uploaded_at,
         }
-        for item in resp.get("blobs", [])
+        for item in resp.blobs
     ]
     # Sort descending by uploadedAt / pathname
     blobs.sort(key=lambda x: x.get("uploadedAt") or x.get("pathname", ""), reverse=True)
